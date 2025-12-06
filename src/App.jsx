@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js'; // ✅ 这里的引用在 Vercel 会正常工作，在这里报错请忽略
+import { createClient } from '@supabase/supabase-js'; 
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -22,13 +22,58 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// ✅ 您的 Supabase 配置
+// ✅ 您的 Supabase 配置 (增加了去空格处理，防止复制错误)
 // ==========================================
 const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
 
-// ✅ 初始化 Supabase 客户端 (只保留这一个，绝无冲突)
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// 🛡️ 安全初始化 Supabase
+let supabase = null;
+let initError = null;
+
+try {
+  if (supabaseUrl && supabaseAnonKey) {
+    // 使用 trim() 去除可能存在的首尾空格
+    supabase = createClient(supabaseUrl.trim(), supabaseAnonKey.trim());
+  } else {
+    initError = "Supabase URL 或 Key 缺失";
+  }
+} catch (error) {
+  console.error("Supabase 初始化失败:", error);
+  initError = error.message;
+}
+
+// --- 简单的错误边界组件 (Error Boundary) ---
+// 如果页面崩溃，显示错误信息而不是白屏
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-center bg-red-50 h-screen flex flex-col items-center justify-center">
+          <AlertTriangle size={48} className="text-red-500 mb-4" />
+          <h1 className="text-xl font-bold text-red-800 mb-2">程序遇到了一点问题</h1>
+          <p className="text-red-600 mb-4">请将下方错误信息截图给技术支持：</p>
+          <pre className="bg-white p-4 rounded border border-red-200 text-left text-xs font-mono overflow-auto max-w-lg">
+            {this.state.error?.toString()}
+          </pre>
+          <button onClick={() => window.location.reload()} className="mt-6 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+            刷新页面重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
 
 // --- 多语言配置 ---
 const TRANSLATIONS = {
@@ -112,7 +157,6 @@ const TRANSLATIONS = {
   }
 };
 
-// --- 主题配置 ---
 const THEMES = [
   { id: 'orange', color: 'bg-orange-400', hover: 'hover:bg-orange-500', light: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', ring: 'focus:ring-orange-300', icon: 'bg-orange-400' },
   { id: 'slate',  color: 'bg-slate-500',  hover: 'hover:bg-slate-600',  light: 'bg-slate-100',  border: 'border-slate-300',  text: 'text-slate-700',  ring: 'focus:ring-slate-300',  icon: 'bg-slate-500' },
@@ -122,7 +166,6 @@ const THEMES = [
   { id: 'yellow', color: 'bg-amber-400',  hover: 'hover:bg-amber-500',  light: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  ring: 'focus:ring-amber-300',  icon: 'bg-amber-400' },
 ];
 
-// --- 工具函数 ---
 const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year, month) => {
   const day = new Date(year, month, 1).getDay();
@@ -152,10 +195,10 @@ const getWeekRange = (date) => {
 };
 
 const INITIAL_TASKS = [
-  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '系统提示：如果您看到这条消息，说明尚未连接云端数据库。', completed: false }
+  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '这是本地演示数据。', completed: false }
 ];
 
-export default function CalendarApp() {
+function CalendarAppContent() {
   const [lang, setLang] = useState('zh'); 
   const t = TRANSLATIONS[lang];
   const [currentThemeId, setCurrentThemeId] = useState('orange');
@@ -169,14 +212,13 @@ export default function CalendarApp() {
   const [view, setView] = useState('month'); 
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
-  // Auth States
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'signup'
+  const [authMode, setAuthMode] = useState('login'); 
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState(''); // 成功消息
+  const [authMessage, setAuthMessage] = useState(''); 
   const [dataLoading, setDataLoading] = useState(false);
 
   const [modalMode, setModalMode] = useState('add'); 
@@ -190,47 +232,52 @@ export default function CalendarApp() {
   const [formDate, setFormDate] = useState('');
   const datePickerRef = useRef(null);
 
-  // --- 初始化 ---
+  // 如果 Supabase 初始化就失败了，直接显示错误
+  if (initError) {
+    throw new Error("Supabase 配置错误: " + initError);
+  }
+
   useEffect(() => {
-    // 1. 加载本地数据
     const savedNotes = localStorage.getItem('saas_notes_v3');
     if (savedNotes) {
       try { setWeeklyNotes(JSON.parse(savedNotes)); } catch (e) {}
     }
     
-    // 2. 尝试连接 Supabase
-    // 只要 package.json 配置正确，supabase 变量在这里就是可用的
-    supabase.auth.getSession().then(({ data }) => {
-      if (data && data.session) {
-        setUser(data.session.user);
-        fetchTasks(data.session.user.id);
-      }
-    });
+    if (supabase) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data && data.session) {
+          setUser(data.session.user);
+          fetchTasks(data.session.user.id);
+        }
+      });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchTasks(session.user.id);
-        setShowAuthModal(false); 
-      } else {
-        setTasks(INITIAL_TASKS);
+      const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchTasks(session.user.id);
+          setShowAuthModal(false); 
+        } else {
+          setTasks(INITIAL_TASKS);
+        }
+      });
+      return () => {
+        if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
+      };
+    } else {
+      const savedTasks = localStorage.getItem('saas_tasks_v3');
+      if (savedTasks) {
+        try { setTasks(JSON.parse(savedTasks)); } catch (e) {}
       }
-    });
-    
-    return () => {
-      if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
-    };
+    }
   }, []);
 
   useEffect(() => {
-    // 仅在未登录状态下备份到 LocalStorage
     if (!user) {
       localStorage.setItem('saas_tasks_v3', JSON.stringify(tasks));
       localStorage.setItem('saas_notes_v3', JSON.stringify(weeklyNotes));
     }
   }, [tasks, weeklyNotes, user]);
 
-  // --- Supabase DB ---
   const fetchTasks = async (userId) => {
     if (!supabase) return;
     setDataLoading(true);
@@ -268,15 +315,14 @@ export default function CalendarApp() {
     if (user && supabase) await supabase.from('tasks').delete().eq('id', taskId);
   };
 
-  // --- Auth Logic (邮箱+密码) ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    if (!supabase) return alert("配置错误：Supabase 连接未开启。");
     setAuthLoading(true);
     setAuthMessage('');
 
     try {
       if (authMode === 'signup') {
-        // 注册
         const { data, error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
@@ -286,7 +332,6 @@ export default function CalendarApp() {
           setAuthMessage(t.checkEmail);
         }
       } else {
-        // 登录
         const { error } = await supabase.auth.signInWithPassword({
           email: authEmail,
           password: authPassword,
@@ -294,7 +339,7 @@ export default function CalendarApp() {
         if (error) throw error;
       }
     } catch (error) {
-      alert(error.message); // 提示错误信息
+      alert(error.message); 
     } finally {
       setAuthLoading(false);
     }
@@ -305,7 +350,6 @@ export default function CalendarApp() {
     setUser(null);
   };
 
-  // --- Business Logic ---
   const toggleTaskStatus = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -373,7 +417,6 @@ export default function CalendarApp() {
     }
   };
 
-  // --- UI Components ---
   const TaskItem = ({ task, isCompact = false, onDelete = null }) => (
     <div className={`flex items-start gap-2 group ${isCompact ? 'mb-1' : `mb-3 p-3 bg-white rounded-xl border ${theme.border} shadow-sm hover:shadow-md transition-all`}`}>
       <div className="pt-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); toggleTaskStatus(task.id); }}>
@@ -405,7 +448,6 @@ export default function CalendarApp() {
 
   return (
     <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800 transition-colors duration-300">
-      {/* Header */}
       <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm z-20 relative transition-colors duration-300`}>
         <div className="flex items-center gap-4 sm:gap-6">
           <div className="flex items-center gap-2 cursor-pointer group" onClick={toggleLang}>
@@ -530,7 +572,7 @@ export default function CalendarApp() {
         </div>
       )}
 
-      {/* Auth Modal (New & Improved) */}
+      {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
@@ -538,45 +580,35 @@ export default function CalendarApp() {
               <div className={`w-16 h-16 ${theme.light} ${theme.text} rounded-full flex items-center justify-center mx-auto mb-4`}><Globe size={32} /></div>
               <h2 className="text-2xl font-bold text-slate-900">{authMode === 'login' ? t.login : t.signup}</h2>
               <p className="text-slate-500 text-sm mt-1 mb-6">{authMode === 'login' ? t.loginDesc : t.signupDesc}</p>
-              
               {authMessage ? (
                 <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-4 border border-green-100 flex gap-2 items-center text-left">
                   <Check size={20} className="flex-shrink-0" /> {authMessage}
                 </div>
               ) : (
-                <>
-                  <form onSubmit={handleAuthSubmit} className="space-y-3">
-                    <div className="relative">
-                      <Mail size={18} className="absolute left-3 top-3 text-slate-400" />
-                      <input type="email" placeholder={t.email} value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-200 text-sm" required />
-                    </div>
-                    <div className="relative">
-                      <Lock size={18} className="absolute left-3 top-3 text-slate-400" />
-                      <input type="password" placeholder={t.password} value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-200 text-sm" required minLength={6} />
-                    </div>
-                    <button type="submit" disabled={authLoading} className={`w-full py-3 ${theme.color} text-white font-bold rounded-xl hover:opacity-90 transition shadow-lg disabled:opacity-50`}>
-                      {authLoading ? t.loading : (authMode === 'login' ? t.login : t.signup)}
-                    </button>
-                  </form>
-                </>
+                <form onSubmit={handleAuthSubmit} className="space-y-3">
+                  <div className="relative">
+                    <Mail size={18} className="absolute left-3 top-3 text-slate-400" />
+                    <input type="email" placeholder={t.email} value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-200 text-sm" required />
+                  </div>
+                  <div className="relative">
+                    <Lock size={18} className="absolute left-3 top-3 text-slate-400" />
+                    <input type="password" placeholder={t.password} value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-200 text-sm" required minLength={6} />
+                  </div>
+                  <button type="submit" disabled={authLoading} className={`w-full py-3 ${theme.color} text-white font-bold rounded-xl hover:opacity-90 transition shadow-lg disabled:opacity-50`}>
+                    {authLoading ? t.loading : (authMode === 'login' ? t.login : t.signup)}
+                  </button>
+                </form>
               )}
             </div>
-            
             <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
-              <button 
-                onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage(''); }}
-                className={`text-sm font-medium ${theme.text} hover:underline`}
-              >
-                {authMode === 'login' ? t.switchToSignup : t.switchToLogin}
-              </button>
+              <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage(''); }} className={`text-sm font-medium ${theme.text} hover:underline`}>{authMode === 'login' ? t.switchToSignup : t.switchToLogin}</button>
             </div>
-            
             <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500"><X size={20} /></button>
           </div>
         </div>
       )}
 
-      {/* Task & Delete & Help Modals */}
+      {/* Task/Help Modals omitted for brevity - logic remains same as functional part */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -621,5 +653,14 @@ export default function CalendarApp() {
         </div>
       )}
     </div>
+  );
+}
+
+// 封装导出，加上 ErrorBoundary
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <CalendarAppContent />
+    </ErrorBoundary>
   );
 }
