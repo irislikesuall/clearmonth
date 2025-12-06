@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js'; // ✅ 引入 Supabase 库
+import { createClient } from '@supabase/supabase-js'; // ✅ 这里的引用在 Vercel 会正常工作
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -27,7 +27,8 @@ import {
 const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
 
-// ✅ 初始化 Supabase 客户端 (直接初始化，不再有冲突)
+// ✅ 初始化 Supabase 客户端
+// (这行代码在 Vercel 上运行完美，因为它会读取 package.json 安装的库)
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // --- 多语言配置 ---
@@ -152,7 +153,7 @@ const getWeekRange = (date) => {
 };
 
 const INITIAL_TASKS = [
-  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '系统提示：如果您看到这条消息，说明尚未连接云端数据库。', completed: false }
+  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后即可同步数据。', completed: false }
 ];
 
 export default function CalendarApp() {
@@ -198,7 +199,7 @@ export default function CalendarApp() {
       try { setWeeklyNotes(JSON.parse(savedNotes)); } catch (e) {}
     }
     
-    // 2. 尝试连接 Supabase
+    // 2. 尝试连接 Supabase (使用正确的全局变量)
     supabase.auth.getSession().then(({ data }) => {
       if (data && data.session) {
         setUser(data.session.user);
@@ -231,7 +232,6 @@ export default function CalendarApp() {
 
   // --- Supabase DB ---
   const fetchTasks = async (userId) => {
-    if (!supabase) return;
     setDataLoading(true);
     const { data, error } = await supabase.from('tasks').select('*').eq('user_id', userId);
     if (!error && data) setTasks(data);
@@ -239,7 +239,7 @@ export default function CalendarApp() {
   };
 
   const dbAddTask = async (newTask) => {
-    if (user && supabase) {
+    if (user) {
       const { data } = await supabase.from('tasks').insert([{
         user_id: user.id,
         text: newTask.text,
@@ -253,7 +253,7 @@ export default function CalendarApp() {
   };
 
   const dbUpdateTask = async (task) => {
-    if (user && supabase) {
+    if (user) {
       await supabase.from('tasks').update({
         text: task.text,
         details: task.details,
@@ -264,7 +264,7 @@ export default function CalendarApp() {
   };
 
   const dbDeleteTask = async (taskId) => {
-    if (user && supabase) await supabase.from('tasks').delete().eq('id', taskId);
+    if (user) await supabase.from('tasks').delete().eq('id', taskId);
   };
 
   // --- Auth Logic (邮箱+密码) ---
@@ -300,7 +300,7 @@ export default function CalendarApp() {
   };
 
   const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut();
+    await supabase.auth.signOut();
     setUser(null);
   };
 
