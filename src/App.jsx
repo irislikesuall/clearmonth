@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// ✅ 您的 Supabase 配置 (增加了去空格处理，防止复制错误)
+// ✅ 您的 Supabase 配置
 // ==========================================
 const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
@@ -33,7 +33,6 @@ let initError = null;
 
 try {
   if (supabaseUrl && supabaseAnonKey) {
-    // 使用 trim() 去除可能存在的首尾空格
     supabase = createClient(supabaseUrl.trim(), supabaseAnonKey.trim());
   } else {
     initError = "Supabase URL 或 Key 缺失";
@@ -43,31 +42,21 @@ try {
   initError = error.message;
 }
 
-// --- 简单的错误边界组件 (Error Boundary) ---
-// 如果页面崩溃，显示错误信息而不是白屏
+// --- 简单的错误边界组件 ---
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
   render() {
     if (this.state.hasError) {
       return (
         <div className="p-8 text-center bg-red-50 h-screen flex flex-col items-center justify-center">
           <AlertTriangle size={48} className="text-red-500 mb-4" />
           <h1 className="text-xl font-bold text-red-800 mb-2">程序遇到了一点问题</h1>
-          <p className="text-red-600 mb-4">请将下方错误信息截图给技术支持：</p>
-          <pre className="bg-white p-4 rounded border border-red-200 text-left text-xs font-mono overflow-auto max-w-lg">
-            {this.state.error?.toString()}
-          </pre>
-          <button onClick={() => window.location.reload()} className="mt-6 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-            刷新页面重试
-          </button>
+          <pre className="bg-white p-4 rounded border border-red-200 text-left text-xs font-mono overflow-auto max-w-lg">{this.state.error?.toString()}</pre>
+          <button onClick={() => window.location.reload()} className="mt-6 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">刷新页面重试</button>
         </div>
       );
     }
@@ -75,11 +64,10 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// --- 多语言配置 ---
+// --- 多语言配置 (包含 weekDays 修复) ---
 const TRANSLATIONS = {
   en: {
     appName: 'ClearMonth',
-    // ✅ 关键修复：添加了 weekDays
     weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     views: { month: 'Month', week: 'Week' },
     today: 'Today',
@@ -120,7 +108,6 @@ const TRANSLATIONS = {
   },
   zh: {
     appName: '清月历',
-    // ✅ 关键修复：添加了 weekDays
     weekDays: ['一', '二', '三', '四', '五', '六', '日'],
     views: { month: '月视图', week: '周视图' },
     today: '今天',
@@ -236,16 +223,11 @@ function CalendarAppContent() {
   const [formDate, setFormDate] = useState('');
   const datePickerRef = useRef(null);
 
-  // 如果 Supabase 初始化就失败了，直接显示错误
-  if (initError) {
-    throw new Error("Supabase 配置错误: " + initError);
-  }
+  if (initError) { throw new Error("Supabase 配置错误: " + initError); }
 
   useEffect(() => {
     const savedNotes = localStorage.getItem('saas_notes_v3');
-    if (savedNotes) {
-      try { setWeeklyNotes(JSON.parse(savedNotes)); } catch (e) {}
-    }
+    if (savedNotes) { try { setWeeklyNotes(JSON.parse(savedNotes)); } catch (e) {} }
     
     if (supabase) {
       supabase.auth.getSession().then(({ data }) => {
@@ -269,9 +251,7 @@ function CalendarAppContent() {
       };
     } else {
       const savedTasks = localStorage.getItem('saas_tasks_v3');
-      if (savedTasks) {
-        try { setTasks(JSON.parse(savedTasks)); } catch (e) {}
-      }
+      if (savedTasks) { try { setTasks(JSON.parse(savedTasks)); } catch (e) {} }
     }
   }, []);
 
@@ -282,6 +262,7 @@ function CalendarAppContent() {
     }
   }, [tasks, weeklyNotes, user]);
 
+  // --- Supabase Operations ---
   const fetchTasks = async (userId) => {
     if (!supabase) return;
     setDataLoading(true);
@@ -333,6 +314,7 @@ function CalendarAppContent() {
         });
         if (error) throw error;
         if (data.user && !data.session) {
+          // 如果关闭了邮箱验证，通常 data.session 会直接存在
           setAuthMessage(t.checkEmail);
         }
       } else {
@@ -449,6 +431,7 @@ function CalendarAppContent() {
   }
   const weekDays = getWeekRange(currentDate);
   const currentWeekKey = formatDateKey(weekDays[0]);
+  const safeWeekDays = t.weekDays || [];
 
   return (
     <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800 transition-colors duration-300">
@@ -478,7 +461,8 @@ function CalendarAppContent() {
               </div>
             )}
           </div>
-          <div className="relative hidden sm:block">
+          <div className="relative">
+            {/* ✅ 修复：移除了 hidden sm:block，让它在所有设备上都显示 */}
             <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className={`flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:${theme.border} transition text-sm font-medium text-slate-600`}>{t.views[view]} <ChevronDown size={14} /></button>
             {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} hover:${theme.text} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
           </div>
@@ -498,13 +482,17 @@ function CalendarAppContent() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
         {view === 'month' && (
-          <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50 flex-shrink-0">
-            {t.weekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">{day}</div>)}
+          // ✅ 修复：允许横向滚动，头部添加 min-w-[700px] 确保手机上不会挤在一起
+          <div className="overflow-auto custom-scrollbar flex-shrink-0 border-b border-slate-200 bg-stone-50">
+             <div className="grid grid-cols-7 min-w-[700px]">
+                {safeWeekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">{day}</div>)}
+             </div>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
+        <div className="flex-1 overflow-auto custom-scrollbar bg-white">
           {view === 'month' && (
-            <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200">
+            // ✅ 修复：主体添加 min-w-[700px]，让用户在手机上可以横向拖动
+            <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200 min-w-[700px]">
               {monthCells.map((cell) => {
                 if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[100px]" />;
                 const isToday = isSameDate(cell.dateObj, new Date());
@@ -534,7 +522,7 @@ function CalendarAppContent() {
                 return (
                   <div key={dateKey} className="border-r border-b border-slate-200 p-4 flex flex-col min-h-[200px] hover:bg-slate-50 transition-colors">
                     <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-                      <div><span className="text-xs font-bold text-slate-400 uppercase mr-2">{t.weekDays[index]}</span><span className={`text-lg font-bold ${isToday ? theme.text : 'text-slate-700'}`}>{date.getDate()}</span></div>
+                      <div><span className="text-xs font-bold text-slate-400 uppercase mr-2">{safeWeekDays[index]}</span><span className={`text-lg font-bold ${isToday ? theme.text : 'text-slate-700'}`}>{date.getDate()}</span></div>
                       <button onClick={() => openAddModal(dateKey)} className={`text-slate-300 hover:${theme.text}`}><Plus size={18} /></button>
                     </div>
                     <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar">
@@ -555,10 +543,12 @@ function CalendarAppContent() {
       {/* Footer (Month View) */}
       {view === 'month' && (
         <div className="h-48 flex-shrink-0 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10 flex">
-          <div className="w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4 relative">
-             <div className="text-4xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
-             <div className="text-slate-500 font-medium uppercase tracking-wide">{new Date(selectedDateKey).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { weekday: 'long' })}</div>
-             <div className="text-xs text-slate-400 mt-1">{tasks.filter(t => t.date === selectedDateKey && !t.completed).length} pending</div>
+          {/* ✅ 修复：底部左侧日期宽度改为 w-24 (移动端) sm:w-48 (桌面端) */}
+          <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-2 sm:p-4 relative">
+             {/* ✅ 修复：缩小了移动端的字体大小 */}
+             <div className="text-2xl sm:text-4xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
+             <div className="text-xs sm:text-base text-slate-500 font-medium uppercase tracking-wide text-center">{new Date(selectedDateKey).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { weekday: lang === 'zh' ? 'short' : 'long' })}</div>
+             <div className="text-[10px] sm:text-xs text-slate-400 mt-1 hidden sm:block">{tasks.filter(t => t.date === selectedDateKey && !t.completed).length} pending</div>
              <button onClick={() => setIsHelpModalOpen(true)} className="absolute bottom-3 left-3 text-slate-400 hover:text-slate-600 transition-colors p-1" title={t.help}><HelpCircle size={18} /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -646,7 +636,7 @@ function CalendarAppContent() {
         <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
               <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-stone-50">
-                <div className="flex items-center gap-2"><HelpCircle size={20} className={theme.text} /><h3 className="font-bold text-lg text-slate-800">{t.usageGuide}</h3></div>
+                <div className="flex items-center gap-2"><HelpCircle size={20} className={theme.text} /><h3 className="font-bold text-slate-800">{t.usageGuide}</h3></div>
                 <button onClick={() => setIsHelpModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
               </div>
               <div className="p-6 overflow-y-auto custom-scrollbar">
