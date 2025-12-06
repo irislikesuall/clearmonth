@@ -79,6 +79,8 @@ class ErrorBoundary extends React.Component {
 const TRANSLATIONS = {
   en: {
     appName: 'ClearMonth',
+    // ✅ 关键修复：添加了 weekDays
+    weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     views: { month: 'Month', week: 'Week' },
     today: 'Today',
     login: 'Log In',
@@ -91,7 +93,7 @@ const TRANSLATIONS = {
     signupDesc: 'Create an account to get started',
     switchToLogin: 'Already have an account? Log In',
     switchToSignup: "Don't have an account? Sign Up",
-    checkEmail: 'Success! Please check your email to confirm your account.',
+    checkEmail: 'Account created! You are logged in.',
     addTask: 'Add Task',
     taskDetails: 'Task Details',
     detailsPlaceholder: 'Add detailed description here...',
@@ -118,6 +120,8 @@ const TRANSLATIONS = {
   },
   zh: {
     appName: '清月历',
+    // ✅ 关键修复：添加了 weekDays
+    weekDays: ['一', '二', '三', '四', '五', '六', '日'],
     views: { month: '月视图', week: '周视图' },
     today: '今天',
     login: '登录',
@@ -130,7 +134,7 @@ const TRANSLATIONS = {
     signupDesc: '注册一个新账户以开始使用',
     switchToLogin: '已有账号？去登录',
     switchToSignup: '还没有账号？去注册',
-    checkEmail: '注册成功！请去邮箱点击确认链接激活账户。',
+    checkEmail: '注册并登录成功！',
     addTask: '新建任务',
     taskDetails: '任务详情',
     detailsPlaceholder: '在此添加详细描述...',
