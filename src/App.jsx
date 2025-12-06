@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+// import { createClient } from '@supabase/supabase-js'; // 🔴【重要】在本地运行时，请取消注释此行！
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -16,31 +16,42 @@ import {
   Trash2,
   AlertTriangle,
   HelpCircle,
-  Loader2
+  Loader2,
+  Mail,
+  Lock
 } from 'lucide-react';
 
 // ==========================================
-// ✅ 这里已经填好了你的 Supabase 信息
+// ✅ 已自动填入你的 Supabase 信息
 // ==========================================
 const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
 
+// 🟢【预览专用】防止在线预览报错。本地开发请删除。
+const createClient = (url, key) => null; 
+
 // 初始化 Supabase 客户端
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = (typeof createClient === 'function' && createClient.name !== 'createClient') 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
 
 // --- 多语言配置 ---
 const TRANSLATIONS = {
   en: {
     appName: 'ClearMonth',
     views: { month: 'Month', week: 'Week' },
-    weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     today: 'Today',
-    login: 'Log In / Sign Up',
+    login: 'Log In',
+    signup: 'Sign Up',
     logout: 'Log Out',
     welcome: 'Welcome',
     email: 'Email address',
-    sendMagicLink: 'Send Magic Link',
-    magicLinkSent: 'Check your email for the login link!',
+    password: 'Password',
+    loginDesc: 'Login to sync your calendar',
+    signupDesc: 'Create an account to get started',
+    switchToLogin: 'Already have an account? Log In',
+    switchToSignup: "Don't have an account? Sign Up",
+    checkEmail: 'Success! Please check your email to confirm your account.',
     addTask: 'Add Task',
     taskDetails: 'Task Details',
     detailsPlaceholder: 'Add detailed description here...',
@@ -58,26 +69,28 @@ const TRANSLATIONS = {
     help: 'Help',
     usageGuide: 'Usage Guide',
     guideSteps: [
-      { title: 'Sync Data', desc: 'Login with email to save data to cloud.' },
+      { title: 'Sync Data', desc: 'Login to save data to cloud automatically.' },
       { title: 'Switch Views', desc: 'Use top-right dropdown to toggle Month/Week view.' },
-      { title: 'Add Task', desc: 'Click any date cell or the big + button.' },
-      { title: 'Complete', desc: 'Click the checkbox to mark done.' },
-      { title: 'Delete', desc: 'Use the trash icon in the list or edit modal.' }
+      { title: 'Add Task', desc: 'Click any date cell or the big + button.' }
     ],
     close: 'Close',
-    loading: 'Loading...'
+    loading: 'Processing...'
   },
   zh: {
     appName: '清月历',
     views: { month: '月视图', week: '周视图' },
-    weekDays: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
     today: '今天',
-    login: '登录 / 注册',
+    login: '登录',
+    signup: '注册账户',
     logout: '退出',
     welcome: '欢迎',
     email: '邮箱地址',
-    sendMagicLink: '发送登录链接',
-    magicLinkSent: '登录链接已发送至邮箱，请查收！',
+    password: '密码 (至少6位)',
+    loginDesc: '登录以同步您的日历数据',
+    signupDesc: '注册一个新账户以开始使用',
+    switchToLogin: '已有账号？去登录',
+    switchToSignup: '还没有账号？去注册',
+    checkEmail: '注册成功！请去邮箱点击确认链接激活账户。',
     addTask: '新建任务',
     taskDetails: '任务详情',
     detailsPlaceholder: '在此添加详细描述...',
@@ -95,14 +108,12 @@ const TRANSLATIONS = {
     help: '使用说明',
     usageGuide: '使用指南',
     guideSteps: [
-      { title: '云端同步', desc: '输入邮箱登录后，数据将自动保存到云端。' },
+      { title: '云端同步', desc: '登录后，数据将自动保存到云端，永不丢失。' },
       { title: '切换视图', desc: '右上角下拉菜单可切换月/周视图。' },
-      { title: '新建任务', desc: '点击日历格子或右上角 + 按钮。' },
-      { title: '完成任务', desc: '点击任务前的方框打钩即可。' },
-      { title: '删除任务', desc: '使用列表右侧的垃圾桶图标。' }
+      { title: '新建任务', desc: '点击日历格子或右上角 + 按钮。' }
     ],
     close: '知道啦',
-    loading: '加载中...'
+    loading: '处理中...'
   }
 };
 
@@ -122,18 +133,15 @@ const getFirstDayOfMonth = (year, month) => {
   const day = new Date(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1; 
 };
-
 const formatDateKey = (date) => {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-
 const isSameDate = (date1, date2) => {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
 };
-
 const getWeekRange = (date) => {
   const current = new Date(date);
   const day = current.getDay();
@@ -149,7 +157,7 @@ const getWeekRange = (date) => {
 };
 
 const INITIAL_TASKS = [
-  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '这是本地模式。配置 Supabase 以开启云同步。', completed: false }
+  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后即可同步数据。', completed: false }
 ];
 
 export default function CalendarApp() {
@@ -166,11 +174,14 @@ export default function CalendarApp() {
   const [view, setView] = useState('month'); 
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
+  // Auth States
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'signup'
   const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [authMessage, setAuthMessage] = useState(''); // 成功消息
   const [dataLoading, setDataLoading] = useState(false);
 
   const [modalMode, setModalMode] = useState('add'); 
@@ -184,25 +195,31 @@ export default function CalendarApp() {
   const [formDate, setFormDate] = useState('');
   const datePickerRef = useRef(null);
 
+  // --- 初始化 ---
   useEffect(() => {
     const savedNotes = localStorage.getItem('saas_notes_v3');
     if (savedNotes) setWeeklyNotes(JSON.parse(savedNotes));
     
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchTasks(session.user.id);
-    });
+    if (supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
+        if (session?.user) fetchTasks(session.user.id);
+      });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchTasks(session.user.id);
-      } else {
-        setTasks(INITIAL_TASKS);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchTasks(session.user.id);
+          setShowAuthModal(false); // 登录成功关闭弹窗
+        } else {
+          setTasks(INITIAL_TASKS);
+        }
+      });
+      return () => subscription.unsubscribe();
+    } else {
+      const savedTasks = localStorage.getItem('saas_tasks_v3');
+      if (savedTasks) setTasks(JSON.parse(savedTasks));
+    }
   }, []);
 
   useEffect(() => {
@@ -212,22 +229,17 @@ export default function CalendarApp() {
     }
   }, [tasks, weeklyNotes, user]);
 
+  // --- Supabase DB ---
   const fetchTasks = async (userId) => {
     setDataLoading(true);
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('user_id', userId);
-    
-    if (!error && data) {
-      setTasks(data);
-    }
+    const { data, error } = await supabase.from('tasks').select('*').eq('user_id', userId);
+    if (!error && data) setTasks(data);
     setDataLoading(false);
   };
 
   const dbAddTask = async (newTask) => {
-    if (user) {
-      const { data, error } = await supabase.from('tasks').insert([{
+    if (user && supabase) {
+      const { data } = await supabase.from('tasks').insert([{
         user_id: user.id,
         text: newTask.text,
         details: newTask.details,
@@ -240,7 +252,7 @@ export default function CalendarApp() {
   };
 
   const dbUpdateTask = async (task) => {
-    if (user) {
+    if (user && supabase) {
       await supabase.from('tasks').update({
         text: task.text,
         details: task.details,
@@ -251,31 +263,49 @@ export default function CalendarApp() {
   };
 
   const dbDeleteTask = async (taskId) => {
-    if (user) {
-      await supabase.from('tasks').delete().eq('id', taskId);
-    }
+    if (user && supabase) await supabase.from('tasks').delete().eq('id', taskId);
   };
 
-  const handleAuth = async (e) => {
+  // --- Auth Logic (邮箱+密码) ---
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    if (!supabase) return alert("Supabase not configured!");
     setAuthLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email: authEmail,
-      options: { emailRedirectTo: window.location.origin }
-    });
-    setAuthLoading(false);
-    if (error) {
-      alert(error.message);
-    } else {
-      setMagicLinkSent(true);
+    setAuthMessage('');
+
+    try {
+      if (authMode === 'signup') {
+        // 注册
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+        // 如果返回了 user 但没有 session，说明需要邮箱验证
+        if (data.user && !data.session) {
+          setAuthMessage(t.checkEmail);
+        }
+      } else {
+        // 登录
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+      }
+    } catch (error) {
+      alert(error.message); // 提示错误信息
+    } finally {
+      setAuthLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut();
     setUser(null);
   };
 
+  // --- Business Logic ---
   const toggleTaskStatus = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -286,7 +316,6 @@ export default function CalendarApp() {
 
   const saveTask = async () => {
     if (!formText.trim()) return;
-
     if (modalMode === 'add') {
       const tempTask = {
         id: Date.now(),
@@ -298,9 +327,7 @@ export default function CalendarApp() {
       setTasks(prev => [...prev, tempTask]);
       setIsModalOpen(false);
       const savedTask = await dbAddTask(tempTask);
-      if (user) {
-        setTasks(prev => prev.map(t => t.id === tempTask.id ? savedTask : t));
-      }
+      if (user && savedTask) setTasks(prev => prev.map(t => t.id === tempTask.id ? savedTask : t));
     } else {
       const updatedTask = { ...editingTask, date: formDate, text: formText, details: formDetails };
       setTasks(tasks.map(t => t.id === editingTask.id ? updatedTask : t));
@@ -321,9 +348,7 @@ export default function CalendarApp() {
 
   const initiateDelete = (taskId = null) => {
     const idToDelete = taskId || (editingTask ? editingTask.id : null);
-    if (idToDelete) {
-      setDeleteConfirm({ show: true, taskId: idToDelete });
-    }
+    if (idToDelete) setDeleteConfirm({ show: true, taskId: idToDelete });
   };
 
   const saveWeeklyNote = (noteText) => {
@@ -333,31 +358,13 @@ export default function CalendarApp() {
   };
   
   const toggleLang = () => setLang(prev => prev === 'en' ? 'zh' : 'en');
-  
   const openAddModal = (dateKey = null) => {
-    setModalMode('add');
-    setFormDate(dateKey || selectedDateKey);
-    setFormText('');
-    setFormDetails('');
-    setEditingTask(null);
-    setIsModalOpen(true);
+    setModalMode('add'); setFormDate(dateKey || selectedDateKey); setFormText(''); setFormDetails(''); setEditingTask(null); setIsModalOpen(true);
   };
-
   const openEditModal = (task) => {
-    setModalMode('edit');
-    setFormDate(task.date);
-    setFormText(task.text);
-    setFormDetails(task.details || '');
-    setEditingTask(task);
-    setIsModalOpen(true);
+    setModalMode('edit'); setFormDate(task.date); setFormText(task.text); setFormDetails(task.details || ''); setEditingTask(task); setIsModalOpen(true);
   };
-
-  const goToToday = () => {
-    const now = new Date();
-    setCurrentDate(now);
-    setSelectedDateKey(formatDateKey(now));
-  };
-
+  const goToToday = () => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); };
   const handleDatePick = (e) => {
     if (e.target.value) {
       const [y, m, d] = e.target.value.split('-');
@@ -366,6 +373,7 @@ export default function CalendarApp() {
     }
   };
 
+  // --- UI Components ---
   const TaskItem = ({ task, isCompact = false, onDelete = null }) => (
     <div className={`flex items-start gap-2 group ${isCompact ? 'mb-1' : `mb-3 p-3 bg-white rounded-xl border ${theme.border} shadow-sm hover:shadow-md transition-all`}`}>
       <div className="pt-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); toggleTaskStatus(task.id); }}>
@@ -374,9 +382,7 @@ export default function CalendarApp() {
         </div>
       </div>
       <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEditModal(task)}>
-        <span className={`text-sm leading-tight transition-all select-none block truncate ${task.completed ? 'text-slate-400 line-through opacity-60' : 'text-slate-700'}`}>
-          {task.text}
-        </span>
+        <span className={`text-sm leading-tight transition-all select-none block truncate ${task.completed ? 'text-slate-400 line-through opacity-60' : 'text-slate-700'}`}>{task.text}</span>
       </div>
       {!isCompact && onDelete && (
         <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="text-slate-300 hover:text-red-400 transition-colors p-1"><Trash2 size={16} /></button>
@@ -399,23 +405,18 @@ export default function CalendarApp() {
 
   return (
     <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800 transition-colors duration-300">
+      {/* Header */}
       <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm z-20 relative transition-colors duration-300`}>
         <div className="flex items-center gap-4 sm:gap-6">
           <div className="flex items-center gap-2 cursor-pointer group" onClick={toggleLang}>
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg transition-colors duration-300 ${theme.color} group-hover:opacity-90`}>
-              {lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}
-            </div>
-            <span className={`font-bold text-xl tracking-tight text-slate-800 group-hover:${theme.text} transition-colors`}>
-              {t.appName}
-            </span>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg transition-colors duration-300 ${theme.color} group-hover:opacity-90`}>{lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}</div>
+            <span className={`font-bold text-xl tracking-tight text-slate-800 group-hover:${theme.text} transition-colors`}>{t.appName}</span>
           </div>
           <div className="flex items-center gap-2 bg-stone-100 rounded-full px-2 py-1">
              <button onClick={goToToday} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm mr-1`}>{t.today}</button>
              <button onClick={() => view === 'month' ? setCurrentDate(new Date(year, month - 1, 1)) : setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 7)))} className={`p-1.5 hover:bg-white rounded-full transition text-slate-500 hover:${theme.text}`}><ChevronLeft size={16} /></button>
              <div className="relative group cursor-pointer">
-               <span className="font-semibold w-24 sm:w-32 text-center text-slate-700 block select-none">
-                 {view === 'month' ? currentDate.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' }) : `${weekDays[0].getMonth()+1}/${weekDays[0].getDate()} - ${weekDays[6].getMonth()+1}/${weekDays[6].getDate()}`}
-               </span>
+               <span className="font-semibold w-24 sm:w-32 text-center text-slate-700 block select-none">{view === 'month' ? currentDate.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' }) : `${weekDays[0].getMonth()+1}/${weekDays[0].getDate()} - ${weekDays[6].getMonth()+1}/${weekDays[6].getDate()}`}</span>
                <input ref={datePickerRef} type={view === 'month' ? "month" : "date"} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={handleDatePick} />
                <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0.5 ${theme.color} transition-all group-hover:w-full`}></div>
              </div>
@@ -427,9 +428,7 @@ export default function CalendarApp() {
             <button onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:bg-slate-100 ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}><Palette size={20} className="text-slate-500" /></button>
             {isThemeMenuOpen && (
               <div className="absolute top-full right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-30 animate-in fade-in zoom-in-95 duration-200 w-48">
-                <div className="grid grid-cols-3 gap-2">
-                  {THEMES.map((th) => <button key={th.id} onClick={() => { setCurrentThemeId(th.id); setIsThemeMenuOpen(false); }} className={`w-full aspect-square rounded-lg ${th.color} hover:opacity-80 transition shadow-sm ring-2 ring-offset-2 ${currentThemeId === th.id ? 'ring-slate-400' : 'ring-transparent'}`} />)}
-                </div>
+                <div className="grid grid-cols-3 gap-2">{THEMES.map((th) => <button key={th.id} onClick={() => { setCurrentThemeId(th.id); setIsThemeMenuOpen(false); }} className={`w-full aspect-square rounded-lg ${th.color} hover:opacity-80 transition shadow-sm ring-2 ring-offset-2 ${currentThemeId === th.id ? 'ring-slate-400' : 'ring-transparent'}`} />)}</div>
               </div>
             )}
           </div>
@@ -444,10 +443,12 @@ export default function CalendarApp() {
               <button onClick={handleLogout} className="text-slate-400 hover:text-red-500" title={t.logout}><LogOut size={16} /></button>
             </div>
           ) : (
-            <button onClick={() => setShowAuthModal(true)} className={`text-sm font-medium text-slate-600 hover:${theme.text}`}>{t.login}</button>
+            <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); }} className={`text-sm font-medium text-slate-600 hover:${theme.text}`}>{t.login}</button>
           )}
         </div>
       </header>
+
+      {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
         {view === 'month' && (
@@ -504,6 +505,8 @@ export default function CalendarApp() {
           )}
         </div>
       </main>
+
+      {/* Footer (Month View) */}
       {view === 'month' && (
         <div className="h-48 flex-shrink-0 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10 flex">
           <div className="w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4 relative">
@@ -526,31 +529,54 @@ export default function CalendarApp() {
           </div>
         </div>
       )}
+
+      {/* Auth Modal (New & Improved) */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8 text-center">
-            {magicLinkSent ? (
-               <>
-                 <div className="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6"><Check size={32} /></div>
-                 <h2 className="text-xl font-bold text-slate-900 mb-2">{t.magicLinkSent}</h2>
-                 <button onClick={() => setShowAuthModal(false)} className="mt-4 text-slate-400 text-sm hover:text-slate-600">{t.close}</button>
-               </>
-            ) : (
-               <>
-                 <div className={`w-16 h-16 ${theme.light} ${theme.text} rounded-full flex items-center justify-center mx-auto mb-6`}><Globe size={32} /></div>
-                 <h2 className="text-2xl font-bold text-slate-900 mb-2">{t.welcome} {t.appName}</h2>
-                 <form onSubmit={handleAuth} className="space-y-4">
-                   <input type="email" placeholder={t.email} value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-400 text-sm" required />
-                   <button type="submit" disabled={authLoading} className={`w-full py-3 ${theme.color} text-white font-bold rounded-xl hover:opacity-90 transition shadow-lg disabled:opacity-50`}>
-                     {authLoading ? t.loading : t.sendMagicLink}
-                   </button>
-                 </form>
-                 <button onClick={() => setShowAuthModal(false)} className="mt-4 text-slate-400 text-sm hover:text-slate-600">{t.cancel}</button>
-               </>
-            )}
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="p-8 text-center">
+              <div className={`w-16 h-16 ${theme.light} ${theme.text} rounded-full flex items-center justify-center mx-auto mb-4`}><Globe size={32} /></div>
+              <h2 className="text-2xl font-bold text-slate-900">{authMode === 'login' ? t.login : t.signup}</h2>
+              <p className="text-slate-500 text-sm mt-1 mb-6">{authMode === 'login' ? t.loginDesc : t.signupDesc}</p>
+              
+              {authMessage ? (
+                <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-4 border border-green-100 flex gap-2 items-center text-left">
+                  <Check size={20} className="flex-shrink-0" /> {authMessage}
+                </div>
+              ) : (
+                <>
+                  <form onSubmit={handleAuthSubmit} className="space-y-3">
+                    <div className="relative">
+                      <Mail size={18} className="absolute left-3 top-3 text-slate-400" />
+                      <input type="email" placeholder={t.email} value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-200 text-sm" required />
+                    </div>
+                    <div className="relative">
+                      <Lock size={18} className="absolute left-3 top-3 text-slate-400" />
+                      <input type="password" placeholder={t.password} value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-200 text-sm" required minLength={6} />
+                    </div>
+                    <button type="submit" disabled={authLoading} className={`w-full py-3 ${theme.color} text-white font-bold rounded-xl hover:opacity-90 transition shadow-lg disabled:opacity-50`}>
+                      {authLoading ? t.loading : (authMode === 'login' ? t.login : t.signup)}
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+            
+            <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
+              <button 
+                onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage(''); }}
+                className={`text-sm font-medium ${theme.text} hover:underline`}
+              >
+                {authMode === 'login' ? t.switchToSignup : t.switchToLogin}
+              </button>
+            </div>
+            
+            <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500"><X size={20} /></button>
           </div>
         </div>
       )}
+
+      {/* Task & Delete & Help Modals */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
