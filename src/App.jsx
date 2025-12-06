@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js'; 
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -21,26 +20,50 @@ import {
   Lock
 } from 'lucide-react';
 
-// ==========================================
-// ✅ 您的 Supabase 配置
-// ==========================================
-const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
+// --- Firebase Imports ---
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  query, 
+  where,
+  serverTimestamp 
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  onAuthStateChanged,
+  signInWithCustomToken,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  signInAnonymously
+} from 'firebase/auth';
 
-// 🛡️ 安全初始化 Supabase
-let supabase = null;
-let initError = null;
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
-try {
-  if (supabaseUrl && supabaseAnonKey) {
-    supabase = createClient(supabaseUrl.trim(), supabaseAnonKey.trim());
-  } else {
-    initError = "Supabase URL 或 Key 缺失";
-  }
-} catch (error) {
-  console.error("Supabase 初始化失败:", error);
-  initError = error.message;
-}
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
+  authDomain: "clearmonth-fdd18.firebaseapp.com",
+  projectId: "clearmonth-fdd18",
+  storageBucket: "clearmonth-fdd18.firebasestorage.app",
+  messagingSenderId: "586292348802",
+  appId: "1:586292348802:web:1d7bf1db3ed7aaedadb19b"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- 简单的错误边界组件 ---
 class ErrorBoundary extends React.Component {
@@ -64,7 +87,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// --- 多语言配置 (包含 weekDays 修复) ---
+// --- 多语言配置 ---
 const TRANSLATIONS = {
   en: {
     appName: 'ClearMonth',
@@ -186,7 +209,7 @@ const getWeekRange = (date) => {
 };
 
 const INITIAL_TASKS = [
-  { id: 1, date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '这是本地演示数据。', completed: false }
+  { id: 'intro-1', date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '这是本地演示数据。登录后数据将存储在云端。', completed: false }
 ];
 
 function CalendarAppContent() {
@@ -223,145 +246,177 @@ function CalendarAppContent() {
   const [formDate, setFormDate] = useState('');
   const datePickerRef = useRef(null);
 
-  if (initError) { throw new Error("Supabase 配置错误: " + initError); }
-
+  // --- Auth & Data Logic (Firebase) ---
   useEffect(() => {
-    const savedNotes = localStorage.getItem('saas_notes_v3');
-    if (savedNotes) { try { setWeeklyNotes(JSON.parse(savedNotes)); } catch (e) {} }
-    
-    if (supabase) {
-      supabase.auth.getSession().then(({ data }) => {
-        if (data && data.session) {
-          setUser(data.session.user);
-          fetchTasks(data.session.user.id);
-        }
-      });
+    // 1. 初始化 Auth
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      }
+      // 如果没有 token，我们等待用户手动登录，不自动匿名登录，以免混淆
+    };
+    initAuth();
 
-      const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          fetchTasks(session.user.id);
-          setShowAuthModal(false); 
-        } else {
-          setTasks(INITIAL_TASKS);
-        }
-      });
-      return () => {
-        if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
-      };
-    } else {
-      const savedTasks = localStorage.getItem('saas_tasks_v3');
-      if (savedTasks) { try { setTasks(JSON.parse(savedTasks)); } catch (e) {} }
-    }
+    // 2. Auth 监听
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setShowAuthModal(false);
+      } else {
+        setTasks(INITIAL_TASKS); // 登出后重置为演示数据
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
+  // 3. 数据监听 (Firestore)
+  useEffect(() => {
+    // 如果没有用户，使用本地存储 (仅用于演示模式)
+    if (!user) {
+      const savedTasks = localStorage.getItem('saas_tasks_v3');
+      if (savedTasks) {
+        try { setTasks(JSON.parse(savedTasks)); } catch (e) {}
+      }
+      return;
+    }
+
+    // 有用户，连接 Firestore
+    setDataLoading(true);
+    // 使用 artifact/user 路径隔离数据
+    const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'));
+    
+    const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+      const fetchedTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTasks(fetchedTasks);
+      setDataLoading(false);
+    }, (err) => {
+      console.error("Firestore read error:", err);
+      setDataLoading(false);
+    });
+
+    return () => unsubscribeSnapshot();
+  }, [user]);
+
+  // 本地存储同步 (仅未登录时)
   useEffect(() => {
     if (!user) {
       localStorage.setItem('saas_tasks_v3', JSON.stringify(tasks));
-      localStorage.setItem('saas_notes_v3', JSON.stringify(weeklyNotes));
     }
-  }, [tasks, weeklyNotes, user]);
+  }, [tasks, user]);
 
-  // --- Supabase Operations ---
-  const fetchTasks = async (userId) => {
-    if (!supabase) return;
-    setDataLoading(true);
-    const { data, error } = await supabase.from('tasks').select('*').eq('user_id', userId);
-    if (!error && data) setTasks(data);
-    setDataLoading(false);
-  };
 
+  // --- Firebase Operations ---
   const dbAddTask = async (newTask) => {
-    if (user && supabase) {
-      const { data } = await supabase.from('tasks').insert([{
-        user_id: user.id,
-        text: newTask.text,
-        details: newTask.details,
-        date: newTask.date,
-        completed: newTask.completed
-      }]).select();
-      if (data) return data[0];
+    if (user) {
+      try {
+        const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'), {
+          text: newTask.text,
+          details: newTask.details,
+          date: newTask.date,
+          completed: newTask.completed,
+          createdAt: serverTimestamp()
+        });
+        return { ...newTask, id: docRef.id };
+      } catch (e) {
+        console.error("Add task error:", e);
+        return newTask;
+      }
     }
     return newTask;
   };
 
   const dbUpdateTask = async (task) => {
-    if (user && supabase) {
-      await supabase.from('tasks').update({
-        text: task.text,
-        details: task.details,
-        date: task.date,
-        completed: task.completed
-      }).eq('id', task.id);
+    if (user) {
+      try {
+        const taskRef = doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', task.id);
+        await updateDoc(taskRef, {
+          text: task.text,
+          details: task.details,
+          date: task.date,
+          completed: task.completed
+        });
+      } catch (e) {
+        console.error("Update task error:", e);
+      }
     }
   };
 
   const dbDeleteTask = async (taskId) => {
-    if (user && supabase) await supabase.from('tasks').delete().eq('id', taskId);
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId));
+      } catch (e) {
+        console.error("Delete task error:", e);
+      }
+    }
   };
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!supabase) return alert("配置错误：Supabase 连接未开启。");
     setAuthLoading(true);
     setAuthMessage('');
 
     try {
       if (authMode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email: authEmail,
-          password: authPassword,
-        });
-        if (error) throw error;
-        if (data.user && !data.session) {
-          // 如果关闭了邮箱验证，通常 data.session 会直接存在
-          setAuthMessage(t.checkEmail);
-        }
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        setAuthMessage(t.checkEmail);
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password: authPassword,
-        });
-        if (error) throw error;
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
       }
     } catch (error) {
-      alert(error.message); 
+      let msg = error.message;
+      if (msg.includes("auth/email-already-in-use")) msg = "该邮箱已被注册";
+      if (msg.includes("auth/invalid-credential")) msg = "邮箱或密码错误";
+      if (msg.includes("auth/weak-password")) msg = "密码太弱 (至少6位)";
+      alert(msg); 
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut();
-    setUser(null);
+    await signOut(auth);
   };
 
   const toggleTaskStatus = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
+    
+    // 乐观更新
     const updatedTask = { ...task, completed: !task.completed };
-    setTasks(tasks.map(t => t.id === taskId ? updatedTask : t));
+    setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+    
     await dbUpdateTask(updatedTask);
   };
 
   const saveTask = async () => {
     if (!formText.trim()) return;
+    
     if (modalMode === 'add') {
+      const tempId = Date.now().toString();
       const tempTask = {
-        id: Date.now(),
+        id: tempId,
         date: formDate,
         text: formText,
         details: formDetails,
         completed: false
       };
+      
       setTasks(prev => [...prev, tempTask]);
       setIsModalOpen(false);
+      
       const savedTask = await dbAddTask(tempTask);
-      if (user && savedTask) setTasks(prev => prev.map(t => t.id === tempTask.id ? savedTask : t));
+      
+      if (user && savedTask.id !== tempId) {
+        setTasks(prev => prev.map(t => t.id === tempId ? savedTask : t));
+      }
+      
     } else {
       const updatedTask = { ...editingTask, date: formDate, text: formText, details: formDetails };
+      
       setTasks(tasks.map(t => t.id === editingTask.id ? updatedTask : t));
       setIsModalOpen(false);
+      
       await dbUpdateTask(updatedTask);
     }
   };
@@ -385,6 +440,8 @@ function CalendarAppContent() {
     const weekStart = getWeekRange(currentDate)[0];
     const weekKey = formatDateKey(weekStart);
     setWeeklyNotes(prev => ({ ...prev, [weekKey]: noteText }));
+    // 备注功能目前简化为本地存储，若需云端可扩展 Firestore 结构
+    if (!user) localStorage.setItem('saas_notes_v3', JSON.stringify({ ...weeklyNotes, [weekKey]: noteText }));
   };
   
   const toggleLang = () => setLang(prev => prev === 'en' ? 'zh' : 'en');
@@ -454,15 +511,6 @@ function CalendarAppContent() {
         </div>
         <div className="flex items-center gap-4">
           <div className="relative">
-            <button onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:bg-slate-100 ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}><Palette size={20} className="text-slate-500" /></button>
-            {isThemeMenuOpen && (
-              <div className="absolute top-full right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-30 animate-in fade-in zoom-in-95 duration-200 w-48">
-                <div className="grid grid-cols-3 gap-2">{THEMES.map((th) => <button key={th.id} onClick={() => { setCurrentThemeId(th.id); setIsThemeMenuOpen(false); }} className={`w-full aspect-square rounded-lg ${th.color} hover:opacity-80 transition shadow-sm ring-2 ring-offset-2 ${currentThemeId === th.id ? 'ring-slate-400' : 'ring-transparent'}`} />)}</div>
-              </div>
-            )}
-          </div>
-          <div className="relative">
-            {/* ✅ 修复：移除了 hidden sm:block，让它在所有设备上都显示 */}
             <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className={`flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:${theme.border} transition text-sm font-medium text-slate-600`}>{t.views[view]} <ChevronDown size={14} /></button>
             {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} hover:${theme.text} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
           </div>
@@ -481,71 +529,79 @@ function CalendarAppContent() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
-        {view === 'month' && (
-          // ✅ 修复：允许横向滚动，头部添加 min-w-[700px] 确保手机上不会挤在一起
-          <div className="overflow-auto custom-scrollbar flex-shrink-0 border-b border-slate-200 bg-stone-50">
-             <div className="grid grid-cols-7 min-w-[700px]">
-                {safeWeekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">{day}</div>)}
-             </div>
-          </div>
-        )}
-        <div className="flex-1 overflow-auto custom-scrollbar bg-white">
-          {view === 'month' && (
-            // ✅ 修复：主体添加 min-w-[700px]，让用户在手机上可以横向拖动
-            <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200 min-w-[700px]">
-              {monthCells.map((cell) => {
-                if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[100px]" />;
-                const isToday = isSameDate(cell.dateObj, new Date());
-                const dayTasks = tasks.filter(t => t.date === cell.dateKey);
-                const isSelected = selectedDateKey === cell.dateKey;
-                return (
-                  <div key={cell.dateKey} onClick={() => setSelectedDateKey(cell.dateKey)} className={`relative border-b border-r border-slate-200 p-1.5 sm:p-2 min-h-[120px] group transition-colors cursor-pointer ${isSelected ? `${theme.light} bg-opacity-60` : 'bg-white hover:bg-slate-50'}`}>
-                    <div className="flex justify-between items-start mb-1">
-                      <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium ${isToday ? `${theme.color} text-white shadow-md` : 'text-slate-700'}`}>{cell.day}</span>
-                      <button onClick={(e) => { e.stopPropagation(); openAddModal(cell.dateKey); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text}`}><Plus size={14} /></button>
-                    </div>
-                    <div className="space-y-0.5">
-                      {dayTasks.slice(0, 15).map(task => <TaskItem key={task.id} task={task} isCompact={true} />)}
-                      {dayTasks.length > 15 && <div className="text-[10px] text-slate-400 pl-1">{dayTasks.length - 15} {t.remaining}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {view === 'week' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 grid-rows-2 h-full">
-              {weekDays.map((date, index) => {
-                const dateKey = formatDateKey(date);
-                const isToday = isSameDate(date, new Date());
-                const dayTasks = tasks.filter(t => t.date === dateKey);
-                return (
-                  <div key={dateKey} className="border-r border-b border-slate-200 p-4 flex flex-col min-h-[200px] hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-                      <div><span className="text-xs font-bold text-slate-400 uppercase mr-2">{safeWeekDays[index]}</span><span className={`text-lg font-bold ${isToday ? theme.text : 'text-slate-700'}`}>{date.getDate()}</span></div>
-                      <button onClick={() => openAddModal(dateKey)} className={`text-slate-300 hover:${theme.text}`}><Plus size={18} /></button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar">
-                      {dayTasks.length > 0 ? dayTasks.map(task => <TaskItem key={task.id} task={task} isCompact={false} onDelete={initiateDelete} />) : <div className="h-full flex items-center justify-center text-slate-300 text-sm italic">{t.emptyDay}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-              <div className={`border-b border-slate-200 ${theme.light} bg-opacity-30 p-4 flex flex-col min-h-[200px]`}>
-                <div className={`flex items-center gap-2 mb-3 pb-2 border-b ${theme.border}`}><FileText size={16} className={theme.text} /><span className="font-bold text-slate-700">{t.weeklyNotes}</span></div>
-                <textarea className="flex-1 w-full bg-transparent resize-none outline-none text-sm text-slate-600 placeholder:text-slate-300" placeholder={t.notesPlaceholder} value={weeklyNotes[currentWeekKey] || ''} onChange={(e) => saveWeeklyNote(e.target.value)} />
+        
+        {/* ✅ 修复：给主内容区域增加内边距(p-2 sm:p-4)，解决边缘紧贴问题 */}
+        <div className="flex-1 overflow-auto custom-scrollbar bg-stone-50 p-2 sm:p-4 flex flex-col">
+          
+          {/* Calendar Container: Added shadow and rounded corners for better separation from edges */}
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative">
+            
+            {view === 'month' && (
+              <div className="overflow-auto custom-scrollbar flex-shrink-0 border-b border-slate-200 bg-stone-50">
+                <div className="grid grid-cols-7 min-w-[700px]">
+                    {safeWeekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">{day}</div>)}
+                </div>
               </div>
+            )}
+
+            <div className="flex-1 overflow-auto custom-scrollbar bg-white">
+              {view === 'month' && (
+                <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200 min-w-[700px]">
+                  {monthCells.map((cell) => {
+                    if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[100px]" />;
+                    const isToday = isSameDate(cell.dateObj, new Date());
+                    const dayTasks = tasks.filter(t => t.date === cell.dateKey);
+                    const isSelected = selectedDateKey === cell.dateKey;
+                    return (
+                      <div key={cell.dateKey} onClick={() => setSelectedDateKey(cell.dateKey)} className={`relative border-b border-r border-slate-200 p-1.5 sm:p-2 min-h-[120px] group transition-colors cursor-pointer ${isSelected ? `${theme.light} bg-opacity-60` : 'bg-white hover:bg-slate-50'}`}>
+                        <div className="flex justify-between items-start mb-1">
+                          <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium ${isToday ? `${theme.color} text-white shadow-md` : 'text-slate-700'}`}>{cell.day}</span>
+                          <button onClick={(e) => { e.stopPropagation(); openAddModal(cell.dateKey); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text}`}><Plus size={14} /></button>
+                        </div>
+                        <div className="space-y-0.5">
+                          {dayTasks.slice(0, 15).map(task => <TaskItem key={task.id} task={task} isCompact={true} />)}
+                          {dayTasks.length > 15 && <div className="text-[10px] text-slate-400 pl-1">{dayTasks.length - 15} {t.remaining}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {view === 'week' && (
+                // ✅ 修复：手机端改为双列布局 (grid-cols-2)，桌面端四列 (lg:grid-cols-4)
+                <div className="grid grid-cols-2 lg:grid-cols-4 auto-rows-fr min-h-full">
+                  {weekDays.map((date, index) => {
+                    const dateKey = formatDateKey(date);
+                    const isToday = isSameDate(date, new Date());
+                    const dayTasks = tasks.filter(t => t.date === dateKey);
+                    return (
+                      <div key={dateKey} className="border-r border-b border-slate-200 p-3 sm:p-4 flex flex-col min-h-[180px] hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                          <div><span className="text-xs font-bold text-slate-400 uppercase mr-2">{safeWeekDays[index]}</span><span className={`text-lg font-bold ${isToday ? theme.text : 'text-slate-700'}`}>{date.getDate()}</span></div>
+                          <button onClick={() => openAddModal(dateKey)} className={`text-slate-300 hover:${theme.text}`}><Plus size={18} /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar">
+                          {dayTasks.length > 0 ? dayTasks.map(task => <TaskItem key={task.id} task={task} isCompact={false} onDelete={initiateDelete} />) : <div className="h-full flex items-center justify-center text-slate-300 text-sm italic">{t.emptyDay}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* 周笔记块 */}
+                  <div className={`border-b border-slate-200 ${theme.light} bg-opacity-30 p-3 sm:p-4 flex flex-col min-h-[180px]`}>
+                    <div className={`flex items-center gap-2 mb-3 pb-2 border-b ${theme.border}`}><FileText size={16} className={theme.text} /><span className="font-bold text-slate-700">{t.weeklyNotes}</span></div>
+                    <textarea className="flex-1 w-full bg-transparent resize-none outline-none text-sm text-slate-600 placeholder:text-slate-300" placeholder={t.notesPlaceholder} value={weeklyNotes[currentWeekKey] || ''} onChange={(e) => saveWeeklyNote(e.target.value)} />
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </main>
 
       {/* Footer (Month View) */}
       {view === 'month' && (
         <div className="h-48 flex-shrink-0 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10 flex">
-          {/* ✅ 修复：底部左侧日期宽度改为 w-24 (移动端) sm:w-48 (桌面端) */}
           <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-2 sm:p-4 relative">
-             {/* ✅ 修复：缩小了移动端的字体大小 */}
              <div className="text-2xl sm:text-4xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
              <div className="text-xs sm:text-base text-slate-500 font-medium uppercase tracking-wide text-center">{new Date(selectedDateKey).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { weekday: lang === 'zh' ? 'short' : 'long' })}</div>
              <div className="text-[10px] sm:text-xs text-slate-400 mt-1 hidden sm:block">{tasks.filter(t => t.date === selectedDateKey && !t.completed).length} pending</div>
