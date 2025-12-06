@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js'; // ✅ 已启用 Supabase 库
+import { createClient } from '@supabase/supabase-js'; // ✅ 引入 Supabase 库
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -27,7 +27,7 @@ import {
 const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
 
-// 初始化 Supabase 客户端 (生产环境模式)
+// ✅ 初始化 Supabase 客户端 (直接初始化，不再有冲突)
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // --- 多语言配置 ---
@@ -198,34 +198,27 @@ export default function CalendarApp() {
       try { setWeeklyNotes(JSON.parse(savedNotes)); } catch (e) {}
     }
     
-    // 2. 如果 Supabase 存在，尝试连接
-    if (supabase) {
-      supabase.auth.getSession().then(({ data }) => {
-        if (data && data.session) {
-          setUser(data.session.user);
-          fetchTasks(data.session.user.id);
-        }
-      });
-
-      const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          fetchTasks(session.user.id);
-          setShowAuthModal(false); 
-        } else {
-          setTasks(INITIAL_TASKS);
-        }
-      });
-      return () => {
-        if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
-      };
-    } else {
-      // 降级模式：仅本地
-      const savedTasks = localStorage.getItem('saas_tasks_v3');
-      if (savedTasks) {
-        try { setTasks(JSON.parse(savedTasks)); } catch (e) {}
+    // 2. 尝试连接 Supabase
+    supabase.auth.getSession().then(({ data }) => {
+      if (data && data.session) {
+        setUser(data.session.user);
+        fetchTasks(data.session.user.id);
       }
-    }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchTasks(session.user.id);
+        setShowAuthModal(false); 
+      } else {
+        setTasks(INITIAL_TASKS);
+      }
+    });
+    
+    return () => {
+      if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -277,7 +270,6 @@ export default function CalendarApp() {
   // --- Auth Logic (邮箱+密码) ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!supabase) return alert("请先在代码中开启 Supabase 连接 (取消 import 注释)");
     setAuthLoading(true);
     setAuthMessage('');
 
