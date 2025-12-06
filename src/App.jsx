@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-// import { createClient } from '@supabase/supabase-js'; // 🔴【重要】在本地运行时，请取消注释此行！
+import { createClient } from '@supabase/supabase-js'; // ✅ 已启用云端数据库库
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -22,18 +22,13 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// ✅ 已自动填入你的 Supabase 信息
+// ✅ 您的 Supabase 配置
 // ==========================================
 const supabaseUrl = 'https://fdfroxjrihytarwrjxqz.supabase.co'; 
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkZnJveGpyaWh5dGFyd3JqeHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ3NjUsImV4cCI6MjA4MDYxMDc2NX0.BDO7AVetY5WruNfyPtY2id0zexqGxCyCoH6B-ku047Y';
 
-// 🟢【预览专用】防止在线预览报错。本地开发请删除。
-const createClient = (url, key) => null; 
-
-// 初始化 Supabase 客户端
-const supabase = (typeof createClient === 'function' && createClient.name !== 'createClient') 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+// 初始化 Supabase 客户端 (生产环境模式)
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // --- 多语言配置 ---
 const TRANSLATIONS = {
@@ -200,26 +195,23 @@ export default function CalendarApp() {
     const savedNotes = localStorage.getItem('saas_notes_v3');
     if (savedNotes) setWeeklyNotes(JSON.parse(savedNotes));
     
-    if (supabase) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setUser(session?.user ?? null);
-        if (session?.user) fetchTasks(session.user.id);
-      });
+    // 初始化时检查 Session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchTasks(session.user.id);
+    });
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          fetchTasks(session.user.id);
-          setShowAuthModal(false); // 登录成功关闭弹窗
-        } else {
-          setTasks(INITIAL_TASKS);
-        }
-      });
-      return () => subscription.unsubscribe();
-    } else {
-      const savedTasks = localStorage.getItem('saas_tasks_v3');
-      if (savedTasks) setTasks(JSON.parse(savedTasks));
-    }
+    // 监听登录状态变化
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchTasks(session.user.id);
+        setShowAuthModal(false); 
+      } else {
+        setTasks(INITIAL_TASKS);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -238,7 +230,7 @@ export default function CalendarApp() {
   };
 
   const dbAddTask = async (newTask) => {
-    if (user && supabase) {
+    if (user) {
       const { data } = await supabase.from('tasks').insert([{
         user_id: user.id,
         text: newTask.text,
@@ -252,7 +244,7 @@ export default function CalendarApp() {
   };
 
   const dbUpdateTask = async (task) => {
-    if (user && supabase) {
+    if (user) {
       await supabase.from('tasks').update({
         text: task.text,
         details: task.details,
@@ -263,13 +255,12 @@ export default function CalendarApp() {
   };
 
   const dbDeleteTask = async (taskId) => {
-    if (user && supabase) await supabase.from('tasks').delete().eq('id', taskId);
+    if (user) await supabase.from('tasks').delete().eq('id', taskId);
   };
 
   // --- Auth Logic (邮箱+密码) ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!supabase) return alert("Supabase not configured!");
     setAuthLoading(true);
     setAuthMessage('');
 
@@ -281,7 +272,6 @@ export default function CalendarApp() {
           password: authPassword,
         });
         if (error) throw error;
-        // 如果返回了 user 但没有 session，说明需要邮箱验证
         if (data.user && !data.session) {
           setAuthMessage(t.checkEmail);
         }
@@ -301,7 +291,7 @@ export default function CalendarApp() {
   };
 
   const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut();
+    await supabase.auth.signOut();
     setUser(null);
   };
 
