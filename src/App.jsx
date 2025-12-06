@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Imports ---
+// ✅ 统一在顶部引用，防止重复报错
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -44,12 +45,9 @@ import {
   signInAnonymously
 } from 'firebase/auth';
 
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
+// ==========================================
+// ✅ Firebase 配置与初始化
+// ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
@@ -59,11 +57,14 @@ const firebaseConfig = {
   appId: "1:586292348802:web:1d7bf1db3ed7aaedadb19b"
 };
 
-// Initialize Firebase
+// 初始化 Firebase
+// 注意：这里使用单例模式，避免重复初始化
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// 这个 appId 变量用于数据隔离
+const appId = 'clearmonth-app';
 
 // --- 简单的错误边界组件 ---
 class ErrorBoundary extends React.Component {
@@ -248,16 +249,7 @@ function CalendarAppContent() {
 
   // --- Auth & Data Logic (Firebase) ---
   useEffect(() => {
-    // 1. 初始化 Auth
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      }
-      // 如果没有 token，我们等待用户手动登录，不自动匿名登录，以免混淆
-    };
-    initAuth();
-
-    // 2. Auth 监听
+    // Auth 监听
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -269,10 +261,10 @@ function CalendarAppContent() {
     return () => unsubscribe();
   }, []);
 
-  // 3. 数据监听 (Firestore)
+  // 数据监听 (Firestore)
   useEffect(() => {
-    // 如果没有用户，使用本地存储 (仅用于演示模式)
     if (!user) {
+      // 本地演示模式
       const savedTasks = localStorage.getItem('saas_tasks_v3');
       if (savedTasks) {
         try { setTasks(JSON.parse(savedTasks)); } catch (e) {}
@@ -280,9 +272,8 @@ function CalendarAppContent() {
       return;
     }
 
-    // 有用户，连接 Firestore
+    // 登录后模式
     setDataLoading(true);
-    // 使用 artifact/user 路径隔离数据
     const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'));
     
     const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
@@ -533,7 +524,7 @@ function CalendarAppContent() {
         {/* ✅ 修复：给主内容区域增加内边距(p-2 sm:p-4)，解决边缘紧贴问题 */}
         <div className="flex-1 overflow-auto custom-scrollbar bg-stone-50 p-2 sm:p-4 flex flex-col">
           
-          {/* Calendar Container: Added shadow and rounded corners for better separation from edges */}
+          {/* Calendar Container */}
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative">
             
             {view === 'month' && (
