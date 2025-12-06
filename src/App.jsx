@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Imports ---
-// ✅ 统一在顶部引用，防止重复报错
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -58,7 +57,6 @@ const firebaseConfig = {
 };
 
 // 初始化 Firebase
-// 注意：这里使用单例模式，避免重复初始化
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -501,6 +499,15 @@ function CalendarAppContent() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {/* ✅ 修复：找回了主题切换按钮 */}
+          <div className="relative">
+            <button onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:bg-slate-100 ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}><Palette size={20} className="text-slate-500" /></button>
+            {isThemeMenuOpen && (
+              <div className="absolute top-full right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-30 animate-in fade-in zoom-in-95 duration-200 w-48">
+                <div className="grid grid-cols-3 gap-2">{THEMES.map((th) => <button key={th.id} onClick={() => { setCurrentThemeId(th.id); setIsThemeMenuOpen(false); }} className={`w-full aspect-square rounded-lg ${th.color} hover:opacity-80 transition shadow-sm ring-2 ring-offset-2 ${currentThemeId === th.id ? 'ring-slate-400' : 'ring-transparent'}`} />)}</div>
+              </div>
+            )}
+          </div>
           <div className="relative">
             <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className={`flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:${theme.border} transition text-sm font-medium text-slate-600`}>{t.views[view]} <ChevronDown size={14} /></button>
             {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} hover:${theme.text} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
