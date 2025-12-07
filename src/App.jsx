@@ -18,7 +18,9 @@ import {
   Loader2,
   Mail,
   Lock,
-  StickyNote
+  StickyNote,
+  Clock,
+  Layout
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -98,12 +100,14 @@ const TRANSLATIONS = {
     usageGuide: 'Usage Guide',
     guideSteps: [
       { title: 'Sync Data', desc: 'Login to save data to cloud automatically.' },
-      { title: 'Drag & Drop', desc: 'Drag tasks to move them between days. Drag to TOP arrows to change month.' },
-      { title: 'Quick Add', desc: 'Press Enter in the title field to save immediately.' },
-      { title: 'Notes', desc: 'Use the sticky note areas in Week/Month views for memos.' }
+      { title: 'Drag & Drop', desc: 'Drag tasks to move. Multi-day tasks move as a block.' },
+      { title: 'Multi-day', desc: 'Set an End Date to create tasks that span multiple days.' },
+      { title: 'Horizontal Scroll', desc: 'Calendar grid keeps fixed width. Scroll horizontally on small screens.' }
     ],
     close: 'Close',
     loading: 'Processing...',
+    startDate: 'Start',
+    endDate: 'End'
   },
   zh: {
     appName: '清月历',
@@ -139,12 +143,14 @@ const TRANSLATIONS = {
     usageGuide: '使用指南',
     guideSteps: [
       { title: '云端同步', desc: '登录后，数据将自动保存到云端，永不丢失。' },
-      { title: '拖拽移动', desc: '长按任务可拖拽至任意日期。拖至顶部箭头可跨月移动。' },
-      { title: '快速添加', desc: '在输入标题时直接敲击回车键即可保存。' },
-      { title: '备忘录', desc: '利用月视图空白处（月初或月末）记录灵感。' }
+      { title: '拖拽移动', desc: '长按任务可拖拽。跨天任务会整体移动，保持天数不变。' },
+      { title: '跨天任务', desc: '新建任务时设置“结束日期”即可创建连续多天的任务。' },
+      { title: '横向滚动', desc: '日历格子宽度固定。窗口变窄时，请左右滑动查看。' }
     ],
     close: '知道啦',
     loading: '处理中...',
+    startDate: '开始',
+    endDate: '结束'
   }
 };
 
@@ -185,6 +191,19 @@ const getWeekRange = (date) => {
   }
   return week;
 };
+// 计算天数差
+const getDayDiff = (d1, d2) => {
+  const date1 = new Date(d1);
+  const date2 = new Date(d2);
+  const diffTime = Math.abs(date2 - date1);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+};
+// 增加天数
+const addDays = (dateStr, days) => {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return formatDateKey(d);
+};
 
 // ==========================================
 // 🧱 组件定义
@@ -213,27 +232,30 @@ class ErrorBoundary extends React.Component {
 }
 
 // 2. 任务项 (Draggable)
-const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart }) => (
+const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayLabel }) => (
   <div 
     draggable="true"
     onDragStart={(e) => {
-      // 必须阻止冒泡，否则可能触发父容器点击
       e.stopPropagation();
       onDragStart(e, task);
     }}
     onClick={(e) => { e.stopPropagation(); onClick(task); }}
     className={`
-      flex items-start gap-2 group cursor-grab active:cursor-grabbing 
-      ${isCompact ? 'mb-1' : `mb-3 p-3 bg-white rounded-xl border ${theme.border} shadow-sm hover:shadow-md transition-all`}
+      flex items-center gap-2 group cursor-grab active:cursor-grabbing 
+      ${isCompact ? 'mb-1 py-1' : `mb-3 p-3 bg-white rounded-xl border ${theme.border} shadow-sm hover:shadow-md transition-all`}
+      ${isCompact && task.isMultiDay ? 'bg-indigo-50 border border-indigo-100 rounded px-1' : ''}
     `}
   >
-    <div className="pt-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); onClick(task, true); }}>
+    <div className="pt-0.5 cursor-pointer flex-shrink-0" onClick={(e) => { e.stopPropagation(); onClick(task, true); }}>
       <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors duration-200 ${task.completed ? `${theme.color} border-transparent` : `border-slate-300 bg-white hover:${theme.border}`}`}>
         {task.completed && <Check size={10} className="text-white" />}
       </div>
     </div>
-    <div className="flex-1 min-w-0 pointer-events-none">
-      <span className={`text-sm leading-tight transition-all select-none block truncate ${task.completed ? 'text-slate-400 line-through opacity-60' : 'text-slate-700'}`}>{task.text}</span>
+    <div className="flex-1 min-w-0 pointer-events-none flex items-center gap-1">
+      <span className={`text-sm leading-tight transition-all select-none block truncate ${task.completed ? 'text-slate-400 line-through opacity-60' : 'text-slate-700'} ${task.isMultiDay && isCompact ? 'text-indigo-700 font-medium' : ''}`}>
+        {task.text}
+      </span>
+      {dayLabel && <span className="text-[10px] text-indigo-400 font-medium flex-shrink-0 bg-white/50 px-1 rounded">{dayLabel}</span>}
     </div>
     {!isCompact && onDelete && (
       <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="text-slate-300 hover:text-red-400 transition-colors p-1"><Trash2 size={16} /></button>
@@ -243,13 +265,13 @@ const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart }) =>
 
 // 3. 备忘录
 const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }) => (
-  <div className={`relative flex flex-col ${type === 'month' ? 'h-full bg-yellow-50/60 p-2 shadow-inner border border-yellow-100' : `border-b border-slate-200 ${theme.light} bg-opacity-30 p-3 sm:p-4 min-h-[180px]`}`}>
-    <div className={`flex items-center gap-2 mb-2 ${type === 'month' ? '' : 'pb-2 border-b ' + theme.border}`}>
-      <StickyNote size={type === 'month' ? 14 : 16} className={type === 'month' ? 'text-yellow-600' : theme.text} />
-      <span className={`font-bold ${type === 'month' ? 'text-yellow-700 text-xs' : 'text-slate-700 text-sm'}`}>{title}</span>
+  <div className={`relative flex flex-col h-full ${type.includes('month') ? 'bg-yellow-50/60 p-2 sm:p-4 shadow-inner border border-yellow-100' : `border-b border-slate-200 ${theme.light} bg-opacity-30 p-3 sm:p-4 min-h-[180px]`}`}>
+    <div className={`flex items-center gap-2 mb-2 ${type.includes('month') ? '' : 'pb-2 border-b ' + theme.border}`}>
+      <StickyNote size={type.includes('month') ? 16 : 16} className={type.includes('month') ? 'text-yellow-600' : theme.text} />
+      <span className={`font-bold ${type.includes('month') ? 'text-yellow-700 text-sm' : 'text-slate-700 text-sm'}`}>{title}</span>
     </div>
     <textarea 
-      className="flex-1 w-full bg-transparent resize-none outline-none text-xs sm:text-sm text-slate-600 placeholder:text-slate-400/50 leading-relaxed" 
+      className="flex-1 w-full bg-transparent resize-none outline-none text-sm text-slate-700 placeholder:text-slate-400/50 leading-relaxed" 
       placeholder={placeholder} 
       value={value || ''} 
       onChange={(e) => onChange(e.target.value)} 
@@ -274,7 +296,7 @@ function CalendarAppContent() {
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
   // 数据状态
-  const [tasks, setTasks] = useState([{ id: 'demo-1', date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后数据自动云同步', completed: false }]);
+  const [tasks, setTasks] = useState([{ id: 'demo-1', date: formatDateKey(new Date()), endDate: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后数据自动云同步', completed: false }]);
   const [notes, setNotes] = useState({}); 
   const [dataLoading, setDataLoading] = useState(false);
   
@@ -294,6 +316,7 @@ function CalendarAppContent() {
   const [formText, setFormText] = useState('');
   const [formDetails, setFormDetails] = useState('');
   const [formDate, setFormDate] = useState('');
+  const [formEndDate, setFormEndDate] = useState(''); // 新增结束时间
   const [deleteConfirm, setDeleteConfirm] = useState({ show: false, taskId: null });
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
@@ -301,12 +324,31 @@ function CalendarAppContent() {
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
 
-  // 性能优化：任务映射表 O(1)
+  // 性能优化 & 跨天逻辑处理：任务映射表 O(N)
   const tasksMap = useMemo(() => {
     const map = {};
     tasks.forEach(task => {
-      if (!map[task.date]) map[task.date] = [];
-      map[task.date].push(task);
+      const startDate = new Date(task.date);
+      const endDate = task.endDate ? new Date(task.endDate) : startDate;
+      
+      // 遍历任务涉及的每一天
+      let current = new Date(startDate);
+      let dayIndex = 1;
+      const totalDays = getDayDiff(startDate, endDate) + 1;
+      
+      while (current <= endDate) {
+        const key = formatDateKey(current);
+        if (!map[key]) map[key] = [];
+        
+        map[key].push({
+          ...task,
+          isMultiDay: totalDays > 1,
+          dayLabel: totalDays > 1 ? `(${dayIndex}/${totalDays})` : null
+        });
+        
+        current.setDate(current.getDate() + 1);
+        dayIndex++;
+      }
     });
     return map;
   }, [tasks]);
@@ -336,14 +378,12 @@ function CalendarAppContent() {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setDataLoading(false);
     });
-    // 简单同步 Notes (实际项目建议存 Firestore)
     const savedNotes = localStorage.getItem(`saas_notes_${user.uid}`);
     if (savedNotes) try { setNotes(JSON.parse(savedNotes)); } catch {}
 
     return () => unsub();
   }, [user]);
 
-  // 本地存储兜底
   useEffect(() => {
     if (!user) {
       localStorage.setItem('saas_tasks_v3', JSON.stringify(tasks));
@@ -359,10 +399,7 @@ function CalendarAppContent() {
     setDraggedTask(task);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify(task)); 
-    // 增加透明度反馈
-    setTimeout(() => {
-      if (e.target) e.target.style.opacity = '0.5';
-    }, 0);
+    setTimeout(() => { if (e.target) e.target.style.opacity = '0.5'; }, 0);
   };
 
   const handleDragEnd = (e) => {
@@ -372,8 +409,9 @@ function CalendarAppContent() {
   };
 
   const handleDragOver = (e, dateKey) => {
-    e.preventDefault(); // 必须调用，否则无法 Drop
+    e.preventDefault(); 
     e.dataTransfer.dropEffect = 'move';
+    // 只有当拖拽到不同于开始日期时才高亮
     if (draggedTask && dateKey && draggedTask.date !== dateKey) {
       setDragOverDate(dateKey);
     }
@@ -384,7 +422,18 @@ function CalendarAppContent() {
     setDragOverDate(null);
     
     if (draggedTask && targetDateKey && draggedTask.date !== targetDateKey) {
-      const updatedTask = { ...draggedTask, date: targetDateKey };
+      // 计算日期差，整体移动
+      const oldStart = new Date(draggedTask.date);
+      const newStart = new Date(targetDateKey);
+      const diffTime = newStart - oldStart;
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      
+      const oldEnd = draggedTask.endDate ? new Date(draggedTask.endDate) : oldStart;
+      const newEnd = new Date(oldEnd);
+      newEnd.setDate(newEnd.getDate() + diffDays);
+      const newEndDateKey = formatDateKey(newEnd);
+
+      const updatedTask = { ...draggedTask, date: targetDateKey, endDate: newEndDateKey };
       
       // 乐观更新
       setTasks(prev => prev.map(t => t.id === draggedTask.id ? updatedTask : t));
@@ -392,7 +441,7 @@ function CalendarAppContent() {
       // 数据库更新
       if (user) {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', draggedTask.id);
-        await updateDoc(ref, { date: targetDateKey });
+        await updateDoc(ref, { date: targetDateKey, endDate: newEndDateKey });
       }
     }
     setDraggedTask(null);
@@ -405,23 +454,32 @@ function CalendarAppContent() {
     let targetDate = new Date(currentDate);
     if (direction === 'prev') {
       targetDate.setMonth(targetDate.getMonth() - 1);
-      targetDate.setDate(1); // 默认丢到上个月1号
+      targetDate.setDate(1); 
     } else {
       targetDate.setMonth(targetDate.getMonth() + 1);
-      targetDate.setDate(1); // 默认丢到下个月1号
+      targetDate.setDate(1); 
     }
     const targetKey = formatDateKey(targetDate);
-    
     handleDrop(e, targetKey);
-    setCurrentDate(targetDate); // 跳转视图
+    setCurrentDate(targetDate); 
   };
 
   const saveTask = async () => {
     if (!formText.trim()) return;
+    
+    // 默认结束日期为开始日期
+    const finalEndDate = formEndDate || formDate;
 
     if (modalMode === 'add') {
       const tempId = Date.now().toString();
-      const newTask = { id: tempId, date: formDate, text: formText, details: formDetails, completed: false };
+      const newTask = { 
+        id: tempId, 
+        date: formDate, 
+        endDate: finalEndDate,
+        text: formText, 
+        details: formDetails, 
+        completed: false 
+      };
       
       setTasks(prev => [...prev, newTask]);
       setIsModalOpen(false);
@@ -435,12 +493,12 @@ function CalendarAppContent() {
         } catch (e) { console.error(e); }
       }
     } else {
-      const updated = { ...editingTask, date: formDate, text: formText, details: formDetails };
+      const updated = { ...editingTask, date: formDate, endDate: finalEndDate, text: formText, details: formDetails };
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
       setIsModalOpen(false);
       if (user) {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', updated.id);
-        await updateDoc(ref, { text: updated.text, details: updated.details, date: updated.date });
+        await updateDoc(ref, { text: updated.text, details: updated.details, date: updated.date, endDate: updated.endDate });
       }
     }
   };
@@ -454,32 +512,64 @@ function CalendarAppContent() {
     if (user) await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', id));
   };
 
+  const openAddModal = (dateKey) => {
+    setModalMode('add');
+    setFormDate(dateKey || selectedDateKey);
+    setFormEndDate(dateKey || selectedDateKey);
+    setFormText('');
+    setFormDetails('');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (task) => {
+    setEditingTask(task);
+    setFormText(task.text);
+    setFormDetails(task.details);
+    setFormDate(task.date);
+    setFormEndDate(task.endDate || task.date);
+    setModalMode('edit');
+    setIsModalOpen(true);
+  };
+
   // 生成日历格子
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const daysInMonth = getDaysInMonth(year, month);
-  const firstDayObj = getFirstDayOfMonth(year, month); // 0 (Mon) to 6 (Sun) if Mon start
+  const firstDayObj = getFirstDayOfMonth(year, month); // 0-6
+  
+  // 智能计算备忘录位置
+  // 1. 月初空格数
+  const startEmptyCount = firstDayObj;
+  // 2. 月末空格数 (补齐到本周结束)
+  const totalDaysSoFar = startEmptyCount + daysInMonth;
+  const endEmptyCount = (7 - (totalDaysSoFar % 7)) % 7;
+  
+  // 决定备忘录放在哪里：哪边空位多放哪边。且必须 > 0
+  const useStartForNotes = startEmptyCount > 0 && startEmptyCount >= endEmptyCount;
+  const useEndForNotes = !useStartForNotes && endEmptyCount > 0;
   
   const monthCells = [];
-  // 1. 月初空白
-  for (let i = 0; i < firstDayObj; i++) monthCells.push({ type: 'empty', key: `start-${i}` });
-  // 2. 日期
+  
+  // A. 月初
+  if (useStartForNotes) {
+    // 渲染一个大格子
+    monthCells.push({ type: 'note', colSpan: startEmptyCount, key: 'note-start' });
+  } else {
+    // 渲染普通空格子
+    for (let i = 0; i < startEmptyCount; i++) monthCells.push({ type: 'empty', key: `empty-start-${i}` });
+  }
+  
+  // B. 日期
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(year, month, day);
     monthCells.push({ type: 'day', day, dateKey: formatDateKey(d), dateObj: d });
   }
-  // 3. 月末空白 (补齐到42格或35格)
-  const totalSlots = monthCells.length;
-  const neededSlots = totalSlots > 35 ? 42 : 35;
-  for (let i = 0; i < neededSlots - totalSlots; i++) monthCells.push({ type: 'empty', key: `end-${i}` });
-
-  // 关键修复：计算月度备忘录的位置
-  // 如果月初有空位，放第一个；如果月初没空位（周一），放月末第一个空位
-  let noteSlotIndex = -1;
-  if (firstDayObj > 0) {
-    noteSlotIndex = 0;
-  } else if (monthCells.length > daysInMonth) {
-    noteSlotIndex = daysInMonth; // 月末第一个空位
+  
+  // C. 月末
+  if (useEndForNotes) {
+    monthCells.push({ type: 'note', colSpan: endEmptyCount, key: 'note-end' });
+  } else {
+    for (let i = 0; i < endEmptyCount; i++) monthCells.push({ type: 'empty', key: `empty-end-${i}` });
   }
 
   const weekDays = getWeekRange(currentDate);
@@ -488,17 +578,16 @@ function CalendarAppContent() {
     <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800">
       
       {/* Header */}
-      <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-4 py-3 flex items-center justify-between shadow-sm z-20`}>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}>
+      <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-3 sm:px-6 py-3 flex items-center justify-between shadow-sm z-20`}>
+        <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
+          <div className="flex items-center gap-2 cursor-pointer group flex-shrink-0" onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}>
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg ${theme.color}`}>
               {lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}
             </div>
             <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName}</span>
           </div>
-          <div className="flex items-center gap-1 bg-stone-100 rounded-full px-1.5 py-1">
+          <div className="flex items-center gap-1 bg-stone-100 rounded-full px-1.5 py-1 flex-shrink-0">
              <button onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm mr-1`}>{t.today}</button>
-             {/* 拖拽到箭头跨月 */}
              <button 
                onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))} 
                onDragOver={(e) => e.preventDefault()}
@@ -506,7 +595,7 @@ function CalendarAppContent() {
                className={`p-1.5 hover:bg-white rounded-full transition text-slate-500 hover:${theme.text}`}
              ><ChevronLeft size={16} /></button>
              <div className="relative group cursor-pointer w-24 sm:w-32 text-center">
-               <span className="font-semibold text-sm select-none">{currentDate.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}</span>
+               <span className="font-semibold text-sm select-none whitespace-nowrap">{currentDate.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}</span>
                <input type="month" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => { if(e.target.value) setCurrentDate(new Date(e.target.value + '-01')); }} />
              </div>
              <button 
@@ -518,58 +607,63 @@ function CalendarAppContent() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <button onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} className={`w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}><Palette size={18} className="text-slate-500" /></button>
           {isThemeMenuOpen && (
-              <div className="absolute top-16 right-20 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-30 w-48 grid grid-cols-3 gap-2">
+              <div className="absolute top-16 right-4 sm:right-20 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-30 w-48 grid grid-cols-3 gap-2">
                 {THEMES.map((th) => <button key={th.id} onClick={() => { setCurrentThemeId(th.id); setIsThemeMenuOpen(false); }} className={`w-full aspect-square rounded-lg ${th.color} hover:opacity-80 ring-2 ${currentThemeId === th.id ? 'ring-slate-400' : 'ring-transparent'}`} />)}
               </div>
           )}
           
-          <div className="relative hidden sm:block">
-            <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600">{t.views[view]} <ChevronDown size={14} /></button>
+          <div className="relative">
+            <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600">
+               {view === 'month' ? <Layout size={16} /> : <Clock size={16} />}
+               <span className="hidden sm:inline">{t.views[view]}</span>
+               <ChevronDown size={14} />
+            </button>
             {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
           </div>
 
-          <button onClick={() => { setModalMode('add'); setFormDate(selectedDateKey); setFormText(''); setFormDetails(''); setIsModalOpen(true); }} className={`w-9 h-9 ${theme.color} text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition`}><Plus size={20} /></button>
+          <button onClick={() => openAddModal(selectedDateKey)} className={`w-9 h-9 ${theme.color} text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition`}><Plus size={20} /></button>
           
           {user ? (
-            <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
+            <div className="flex items-center gap-3 pl-2 sm:pl-3 border-l border-slate-200">
               <div className={`w-8 h-8 ${theme.light} rounded-full flex items-center justify-center ${theme.text} font-bold border ${theme.border} text-xs`}>{user.email[0].toUpperCase()}</div>
               <button onClick={() => signOut(auth)} className="text-slate-400 hover:text-red-500"><LogOut size={16} /></button>
             </div>
           ) : (
-            <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); }} className={`text-sm font-medium text-slate-600 hover:${theme.text}`}>{t.login}</button>
+            <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); }} className={`text-sm font-medium text-slate-600 hover:${theme.text} whitespace-nowrap`}>{t.login}</button>
           )}
         </div>
       </header>
 
-      {/* Main Grid */}
+      {/* Main Grid - 固定最小宽度，允许横向滚动 */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
         
-        <div className="flex-1 overflow-auto custom-scrollbar bg-stone-50 p-2 sm:p-4 flex flex-col">
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-auto bg-stone-50 p-2 sm:p-4 flex flex-col">
+          {/* 给外层容器添加 min-w-[1000px] 强制宽度，实现之前版本的左右拖动效果 */}
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-w-[1000px]">
             
             {/* Calendar Headings */}
             {view === 'month' && (
-              <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50 min-w-[600px]">
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50">
                   {t.weekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase">{day}</div>)}
               </div>
             )}
 
             {/* Grid Content */}
-            <div className="flex-1 overflow-auto custom-scrollbar bg-white">
+            <div className="flex-1 bg-white">
               {view === 'month' ? (
-                <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200 min-w-[600px]">
+                <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200">
                   {monthCells.map((cell, idx) => {
-                    // 渲染月度备忘录
-                    if (idx === noteSlotIndex) {
+                    // A. 月度备忘录 (跨列)
+                    if (cell.type === 'note') {
                       const monthKey = formatDateKey(new Date(year, month, 1));
                       return (
-                        <div key={cell.key || 'note'} className="bg-stone-50/30 border-b border-r border-slate-200 min-h-[100px]">
+                        <div key={cell.key} style={{ gridColumn: `span ${cell.colSpan}` }} className="border-b border-r border-slate-200">
                           <NoteBlock 
-                            type="month"
+                            type="month-large"
                             title={t.monthlyNotes} 
                             theme={theme} 
                             placeholder={t.notesPlaceholder}
@@ -580,8 +674,10 @@ function CalendarAppContent() {
                       );
                     }
 
+                    // B. 空格子
                     if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[100px]" />;
 
+                    // C. 日期格子
                     const dayTasks = tasksMap[cell.dateKey] || [];
                     const isToday = isSameDate(cell.dateObj, new Date());
                     const isDragTarget = dragOverDate === cell.dateKey;
@@ -601,7 +697,7 @@ function CalendarAppContent() {
                       >
                          <div className="flex justify-between items-start mb-1">
                             <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium ${isToday ? `${theme.color} text-white` : 'text-slate-700'}`}>{cell.day}</span>
-                            <button onClick={(e) => { e.stopPropagation(); setModalMode('add'); setFormDate(cell.dateKey); setIsModalOpen(true); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text}`}><Plus size={14} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); openAddModal(cell.dateKey); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text}`}><Plus size={14} /></button>
                          </div>
                          <div className="space-y-0.5">
                             {dayTasks.map(task => (
@@ -609,14 +705,15 @@ function CalendarAppContent() {
                                 key={task.id} 
                                 task={task} 
                                 theme={theme} 
-                                isCompact={true} 
+                                isCompact={true}
+                                dayLabel={task.dayLabel} 
                                 onClick={(t, toggle) => {
                                    if (toggle) {
                                      const updated = { ...t, completed: !t.completed };
                                      setTasks(prev => prev.map(pt => pt.id === t.id ? updated : pt));
                                      if(user) updateDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', t.id), { completed: updated.completed });
                                    } else {
-                                     setEditingTask(t); setFormText(t.text); setFormDetails(t.details); setFormDate(t.date); setModalMode('edit'); setIsModalOpen(true);
+                                     openEditModal(t);
                                    }
                                 }}
                                 onDragStart={handleDragStart}
@@ -628,7 +725,7 @@ function CalendarAppContent() {
                   })}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 lg:grid-cols-4 auto-rows-fr min-h-full">
+                <div className="grid grid-cols-4 auto-rows-fr min-h-full">
                   {weekDays.map((date, idx) => {
                     const dateKey = formatDateKey(date);
                     const dayTasks = tasksMap[dateKey] || [];
@@ -642,13 +739,14 @@ function CalendarAppContent() {
                       >
                          <div className="flex justify-between mb-3 pb-2 border-b border-slate-100">
                            <div><span className="text-xs font-bold text-slate-400 mr-2">{t.weekDays[idx]}</span><span className="font-bold text-slate-700">{date.getDate()}</span></div>
-                           <button onClick={() => { setModalMode('add'); setFormDate(dateKey); setIsModalOpen(true); }}><Plus size={16} className="text-slate-300 hover:text-slate-600" /></button>
+                           <button onClick={() => openAddModal(dateKey)}><Plus size={16} className="text-slate-300 hover:text-slate-600" /></button>
                          </div>
                          <div className="space-y-2 flex-1">
                            {dayTasks.map(task => (
                              <TaskItem 
                                key={task.id} task={task} theme={theme} 
-                               onClick={() => { setEditingTask(task); setFormText(task.text); setFormDetails(task.details); setFormDate(task.date); setModalMode('edit'); setIsModalOpen(true); }}
+                               dayLabel={task.dayLabel}
+                               onClick={() => openEditModal(task)}
                                onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }}
                                onDragStart={handleDragStart}
                              />
@@ -657,7 +755,10 @@ function CalendarAppContent() {
                       </div>
                     );
                   })}
-                  <NoteBlock title={t.weeklyNotes} theme={theme} value={notes[formatDateKey(weekDays[0])]} onChange={(v) => setNotes(prev => ({...prev, [formatDateKey(weekDays[0])]: v}))} placeholder={t.notesPlaceholder} />
+                  {/* 周视图可以简单地放这里，或者用绝对定位，这里简化放在最后 */}
+                  <div className="col-span-4 border-t border-slate-200">
+                     <NoteBlock title={t.weeklyNotes} theme={theme} value={notes[formatDateKey(weekDays[0])]} onChange={(v) => setNotes(prev => ({...prev, [formatDateKey(weekDays[0])]: v}))} placeholder={t.notesPlaceholder} />
+                  </div>
                 </div>
               )}
             </div>
@@ -665,23 +766,32 @@ function CalendarAppContent() {
         </div>
       </main>
       
-      {/* 底部详情区 (仅月视图) */}
+      {/* 底部详情区 (仅月视图) - 增高到 h-80 */}
       {view === 'month' && (
-        <div className="h-40 bg-white border-t border-slate-200 flex shrink-0">
-          <div className="w-24 sm:w-40 bg-stone-50 border-r flex flex-col items-center justify-center p-4">
-             <div className="text-3xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
-             <div className="text-xs uppercase text-slate-500 font-bold mt-1">{new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}</div>
-             <button onClick={() => setIsHelpModalOpen(true)} className="mt-4 text-slate-300 hover:text-slate-500"><HelpCircle size={18} /></button>
+        <div className="h-80 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4">
+             <div className="text-4xl sm:text-5xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
+             <div className="text-sm uppercase text-slate-500 font-bold mt-2">{new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}</div>
+             <button onClick={() => setIsHelpModalOpen(true)} className="mt-6 text-slate-300 hover:text-slate-500"><HelpCircle size={20} /></button>
           </div>
-          <div className="flex-1 p-4 overflow-y-auto">
-             <div className="flex items-center justify-between mb-2">
-               <h3 className="font-bold text-slate-700">{selectedDateKey}</h3>
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto custom-scrollbar">
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="font-bold text-slate-700 text-lg">{selectedDateKey}</h3>
+               <button onClick={() => openAddModal(selectedDateKey)} className={`text-sm ${theme.text} bg-slate-50 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1 font-medium`}>
+                 <Plus size={14} /> {t.addTask}
+               </button>
              </div>
-             <div className="space-y-1">
+             <div className="space-y-2">
                 {(tasksMap[selectedDateKey] || []).map(task => (
-                   <TaskItem key={task.id} task={task} theme={theme} onClick={() => { setEditingTask(task); setFormText(task.text); setFormDetails(task.details); setFormDate(task.date); setModalMode('edit'); setIsModalOpen(true); }} onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }} onDragStart={handleDragStart} />
+                   <TaskItem 
+                     key={task.id} task={task} theme={theme} 
+                     dayLabel={task.dayLabel}
+                     onClick={() => openEditModal(task)} 
+                     onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }} 
+                     onDragStart={handleDragStart} 
+                   />
                 ))}
-                {(tasksMap[selectedDateKey] || []).length === 0 && <span className="text-slate-400 text-sm italic">{t.emptyDay}</span>}
+                {(tasksMap[selectedDateKey] || []).length === 0 && <span className="text-slate-400 text-sm italic py-4 block">{t.emptyDay}</span>}
              </div>
           </div>
         </div>
@@ -690,7 +800,7 @@ function CalendarAppContent() {
       {/* 认证弹窗 */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <h2 className="text-2xl font-bold mb-2">{authMode === 'login' ? t.login : t.signup}</h2>
               {authMessage && <div className="text-green-600 bg-green-50 p-2 rounded mb-4 text-sm">{authMessage}</div>}
               <form onSubmit={async (e) => {
@@ -702,10 +812,10 @@ function CalendarAppContent() {
               }} className="space-y-4">
                  <input type="email" placeholder={t.email} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} required />
                  <input type="password" placeholder={t.password} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required />
-                 <button disabled={authLoading} className={`w-full py-3 ${theme.color} text-white rounded-xl font-bold`}>{authLoading ? t.loading : (authMode === 'login' ? t.login : t.signup)}</button>
+                 <button disabled={authLoading} className={`w-full py-3 ${theme.color} text-white rounded-xl font-bold hover:opacity-90 transition`}>{authLoading ? t.loading : (authMode === 'login' ? t.login : t.signup)}</button>
               </form>
               <button onClick={() => setAuthMode(m => m === 'login' ? 'signup' : 'login')} className="mt-4 text-sm text-slate-500 hover:underline">{authMode === 'login' ? t.switchToSignup : t.switchToLogin}</button>
-              <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-300"><X size={20} /></button>
+              <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={20} /></button>
            </div>
         </div>
       )}
@@ -713,7 +823,7 @@ function CalendarAppContent() {
       {/* 任务弹窗 */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/20 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
              <div className="p-4 bg-stone-50 border-b flex justify-between items-center"><h3 className="font-bold">{t.taskDetails}</h3><button onClick={() => setIsModalOpen(false)}><X size={20} className="text-slate-400" /></button></div>
              <div className="p-6 space-y-4">
                <input 
@@ -723,16 +833,30 @@ function CalendarAppContent() {
                  value={formText} 
                  onChange={e => setFormText(e.target.value)}
                  onKeyDown={(e) => {
-                   // 核心修复：防止中文输入法回车误触
                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) saveTask();
                  }}
                />
-               <div className="flex items-center gap-2 bg-slate-50 p-2 rounded text-sm text-slate-500"><CalendarIcon size={16} /><input type="date" className="bg-transparent border-none p-0 text-sm" value={formDate} onChange={e=>setFormDate(e.target.value)} /></div>
+               <div className="flex gap-4">
+                 <div className="flex-1">
+                    <label className="text-xs text-slate-400 font-bold mb-1 block uppercase">{t.startDate}</label>
+                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded text-sm text-slate-500 border border-slate-100">
+                      <CalendarIcon size={16} />
+                      <input type="date" className="bg-transparent border-none p-0 text-sm w-full" value={formDate} onChange={e=>setFormDate(e.target.value)} />
+                    </div>
+                 </div>
+                 <div className="flex-1">
+                    <label className="text-xs text-slate-400 font-bold mb-1 block uppercase">{t.endDate}</label>
+                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded text-sm text-slate-500 border border-slate-100">
+                      <CalendarIcon size={16} />
+                      <input type="date" className="bg-transparent border-none p-0 text-sm w-full" value={formEndDate} onChange={e=>setFormEndDate(e.target.value)} />
+                    </div>
+                 </div>
+               </div>
                <textarea className="w-full bg-stone-50 p-3 rounded-xl border-none resize-none text-sm h-32" placeholder={t.detailsPlaceholder} value={formDetails} onChange={e=>setFormDetails(e.target.value)} />
                <div className="flex justify-end gap-3 pt-2">
-                 {modalMode === 'edit' && <button onClick={() => { setIsModalOpen(false); setDeleteConfirm({ show: true, taskId: editingTask.id }); }} className="text-red-400 text-sm mr-auto">{t.delete}</button>}
-                 <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-500 text-sm">{t.cancel}</button>
-                 <button onClick={saveTask} className={`px-6 py-2 ${theme.color} text-white rounded-lg text-sm font-bold shadow-lg`}>{t.save}</button>
+                 {modalMode === 'edit' && <button onClick={() => { setIsModalOpen(false); setDeleteConfirm({ show: true, taskId: editingTask.id }); }} className="text-red-400 text-sm mr-auto font-medium hover:text-red-600">{t.delete}</button>}
+                 <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-500 text-sm font-medium hover:bg-slate-50 rounded-lg">{t.cancel}</button>
+                 <button onClick={saveTask} className={`px-6 py-2 ${theme.color} text-white rounded-lg text-sm font-bold shadow-lg hover:opacity-90`}>{t.save}</button>
                </div>
              </div>
           </div>
@@ -742,13 +866,13 @@ function CalendarAppContent() {
       {/* 删除确认 */}
       {deleteConfirm.show && (
          <div className="fixed inset-0 bg-slate-900/30 z-[60] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 text-center max-w-sm w-full shadow-xl">
+            <div className="bg-white rounded-2xl p-6 text-center max-w-sm w-full shadow-xl animate-in fade-in zoom-in-95 duration-200">
                <AlertTriangle size={32} className="text-red-500 mx-auto mb-3" />
                <h3 className="font-bold text-lg mb-1">{t.confirmDeleteTitle}</h3>
                <p className="text-slate-500 text-sm mb-6">{t.confirmDeleteDesc}</p>
                <div className="flex gap-3">
-                 <button onClick={() => setDeleteConfirm({show:false, taskId:null})} className="flex-1 py-2 bg-slate-100 rounded-xl font-bold text-slate-600">{t.cancel}</button>
-                 <button onClick={deleteTask} className="flex-1 py-2 bg-red-500 text-white rounded-xl font-bold shadow-red-200 shadow-lg">{t.confirmButton}</button>
+                 <button onClick={() => setDeleteConfirm({show:false, taskId:null})} className="flex-1 py-2 bg-slate-100 rounded-xl font-bold text-slate-600 hover:bg-slate-200">{t.cancel}</button>
+                 <button onClick={deleteTask} className="flex-1 py-2 bg-red-500 text-white rounded-xl font-bold shadow-red-200 shadow-lg hover:bg-red-600">{t.confirmButton}</button>
                </div>
             </div>
          </div>
@@ -757,7 +881,7 @@ function CalendarAppContent() {
       {/* 帮助弹窗 */}
       {isHelpModalOpen && (
         <div className="fixed inset-0 bg-slate-900/30 z-[70] flex items-center justify-center p-4">
-           <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl">
+           <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="p-4 border-b bg-stone-50 flex justify-between"><h3 className="font-bold flex items-center gap-2"><HelpCircle size={18} /> {t.usageGuide}</h3><button onClick={()=>setIsHelpModalOpen(false)}><X size={18} /></button></div>
               <div className="p-6 space-y-4">
                  {t.guideSteps.map((s,i) => <div key={i} className="flex gap-3"><div className={`w-6 h-6 rounded-full ${theme.color} text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5`}>{i+1}</div><div><div className="font-bold text-sm">{s.title}</div><div className="text-xs text-slate-500">{s.desc}</div></div></div>)}
