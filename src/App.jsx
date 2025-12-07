@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -17,15 +17,22 @@ import {
   HelpCircle,
   Loader2,
   Mail,
-  Lock,
-  GripHorizontal
+  Lock
 } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
-// @ts-ignore: Suppress TS error for valid firebase v9 imports in this environment
-import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, query, serverTimestamp } from 'firebase/firestore';
-// @ts-ignore: Suppress TS error for valid firebase v9 imports in this environment
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  query, 
+  serverTimestamp 
+} from 'firebase/firestore';
 import { 
   getAuth, 
   onAuthStateChanged,
@@ -38,9 +45,8 @@ import {
 // ✅ Firebase 配置与初始化
 // ==========================================
 // 适配 Vite 环境变量 (import.meta.env) 或回退到硬编码
-// 安全提示：在 Vercel 中请配置 VITE_FIREBASE_API_KEY
 const firebaseConfig = {
-  apiKey: ((import.meta as any).env && (import.meta as any).env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
+  apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
   storageBucket: "clearmonth-fdd18.firebasestorage.app",
@@ -155,21 +161,21 @@ const THEMES = [
   { id: 'yellow', color: 'bg-amber-400',  hover: 'hover:bg-amber-500',  light: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  ring: 'focus:ring-amber-300',  icon: 'bg-amber-400' },
 ];
 
-const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (year: number, month: number) => {
+const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+const getFirstDayOfMonth = (year, month) => {
   const day = new Date(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1; 
 };
-const formatDateKey = (date: Date) => {
+const formatDateKey = (date) => {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const isSameDate = (date1: Date, date2: Date) => {
+const isSameDate = (date1, date2) => {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
 };
-const getWeekRange = (date: Date) => {
+const getWeekRange = (date) => {
   const current = new Date(date);
   const day = current.getDay();
   const diff = current.getDate() - day + (day === 0 ? -6 : 1); 
@@ -188,19 +194,12 @@ const getWeekRange = (date: Date) => {
 // ==========================================
 
 // 1. Error Boundary
-interface ErrorBoundaryProps {
-  children: React.ReactNode;
-}
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+class ErrorBoundary extends React.Component {
+  constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
   render() {
     if (this.state.hasError) {
       return (
@@ -217,15 +216,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 }
 
 // 2. 任务项组件 (支持拖拽)
-interface TaskItemProps {
-  task: any;
-  theme: any;
-  isCompact?: boolean;
-  onClick: (task: any, isToggle?: boolean) => void;
-  onDelete?: (id: string) => void;
-  onDragStart?: (e: any, task: any) => void;
-}
-const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart }: TaskItemProps) => (
+const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart }) => (
   <div 
     draggable="true"
     onDragStart={(e) => onDragStart && onDragStart(e, task)}
@@ -247,7 +238,7 @@ const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart }: Ta
 );
 
 // 3. 备忘录组件 (月/周共用)
-const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }: any) => (
+const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }) => (
   <div className={`relative flex flex-col ${type === 'month' ? 'h-full bg-yellow-50/60 p-2 sm:p-3 shadow-inner' : `border-b border-slate-200 ${theme.light} bg-opacity-30 p-3 sm:p-4 min-h-[180px]`}`}>
     <div className={`flex items-center gap-2 mb-2 ${type === 'month' ? '' : 'pb-2 border-b ' + theme.border}`}>
       <FileText size={type === 'month' ? 14 : 16} className={`${theme.text} opacity-70`} />
@@ -263,7 +254,7 @@ const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }
 );
 
 // 4. 认证弹窗
-const AuthModal = ({ isOpen, mode, setMode, email, setEmail, password, setPassword, loading, message, onSubmit, onClose, t, theme }: any) => {
+const AuthModal = ({ isOpen, mode, setMode, email, setEmail, password, setPassword, loading, message, onSubmit, onClose, t, theme }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -306,7 +297,7 @@ const AuthModal = ({ isOpen, mode, setMode, email, setEmail, password, setPasswo
 // ==========================================
 
 function CalendarAppContent() {
-  const [lang, setLang] = useState<'en' | 'zh'>('zh'); 
+  const [lang, setLang] = useState('zh'); 
   const t = TRANSLATIONS[lang];
   const [currentThemeId, setCurrentThemeId] = useState('orange');
   const theme = THEMES.find(th => th.id === currentThemeId) || THEMES[0];
@@ -314,12 +305,12 @@ function CalendarAppContent() {
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(formatDateKey(new Date()));
-  const [tasks, setTasks] = useState<any[]>([{ id: 'intro-1', date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '这是演示数据。', completed: false }]);
-  const [notes, setNotes] = useState<any>({}); // 存储周/月备注 { '2023-10-01': 'note content' }
+  const [tasks, setTasks] = useState([{ id: 'intro-1', date: formatDateKey(new Date()), text: '欢迎使用清月历', details: '这是演示数据。', completed: false }]);
+  const [notes, setNotes] = useState({}); // 存储周/月备注 { '2023-10-01': 'note content' }
   const [view, setView] = useState('month'); 
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login'); 
   const [authEmail, setAuthEmail] = useState('');
@@ -330,8 +321,8 @@ function CalendarAppContent() {
 
   const [modalMode, setModalMode] = useState('add'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<any>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, taskId: string | null}>({ show: false, taskId: null });
+  const [editingTask, setEditingTask] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ show: false, taskId: null });
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   
   const [formText, setFormText] = useState('');
@@ -339,12 +330,12 @@ function CalendarAppContent() {
   const [formDate, setFormDate] = useState('');
   
   // Drag and Drop State
-  const [draggedTask, setDraggedTask] = useState<any>(null);
-  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [draggedTask, setDraggedTask] = useState(null);
+  const [dragOverDate, setDragOverDate] = useState(null);
 
   // 1. Performance Optimization: Use useMemo for tasks map
   const tasksMap = useMemo(() => {
-    const map: any = {};
+    const map = {};
     tasks.forEach(task => {
       if (!map[task.date]) map[task.date] = [];
       map[task.date].push(task);
@@ -354,7 +345,7 @@ function CalendarAppContent() {
 
   // Auth & Data Sync
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser: any) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         setShowAuthModal(false);
@@ -375,8 +366,8 @@ function CalendarAppContent() {
     setDataLoading(true);
     // Sync Tasks
     const qTasks = query(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks'));
-    const unsubTasks = onSnapshot(qTasks, (snapshot: any) => {
-      setTasks(snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })));
+    const unsubTasks = onSnapshot(qTasks, (snapshot) => {
+      setTasks(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       setDataLoading(false);
     });
 
@@ -397,7 +388,7 @@ function CalendarAppContent() {
   }, [tasks, notes, user]);
 
   // Database Operations
-  const dbUpdateTask = async (task: any) => {
+  const dbUpdateTask = async (task) => {
     if (user) {
       const taskRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', task.id);
       await updateDoc(taskRef, {
@@ -406,7 +397,7 @@ function CalendarAppContent() {
     }
   };
 
-  const handleTaskAction = (task: any, isToggle = false) => {
+  const handleTaskAction = (task, isToggle = false) => {
     if (isToggle) {
       const updated = { ...task, completed: !task.completed };
       setTasks(prev => prev.map(t => t.id === task.id ? updated : t));
@@ -451,32 +442,32 @@ function CalendarAppContent() {
     }
   };
 
-  const handleNoteChange = (key: string, text: string) => {
-    setNotes((prev: any) => ({ ...prev, [key]: text }));
+  const handleNoteChange = (key, text) => {
+    setNotes((prev) => ({ ...prev, [key]: text }));
   };
 
   // Drag and Drop Handlers
-  const handleDragStart = (e: any, task: any) => {
+  const handleDragStart = (e, task) => {
     setDraggedTask(task);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', task.id); // Required for Firefox
     e.target.style.opacity = '0.5';
   };
 
-  const handleDragEnd = (e: any) => {
+  const handleDragEnd = (e) => {
     e.target.style.opacity = '1';
     setDraggedTask(null);
     setDragOverDate(null);
   };
 
-  const handleDragOver = (e: any, dateKey: string) => {
+  const handleDragOver = (e, dateKey) => {
     e.preventDefault(); // Necessary for onDrop to work
     if (draggedTask && dateKey !== draggedTask.date) {
       setDragOverDate(dateKey);
     }
   };
 
-  const handleDrop = async (e: any, targetDateKey: string) => {
+  const handleDrop = async (e, targetDateKey) => {
     e.preventDefault();
     if (draggedTask && targetDateKey && draggedTask.date !== targetDateKey) {
       // Optimistic update
@@ -489,7 +480,7 @@ function CalendarAppContent() {
     setDragOverDate(null);
   };
 
-  const handleNavDrop = (e: any, direction: string) => {
+  const handleNavDrop = (e, direction) => {
     e.preventDefault();
     if (!draggedTask) return;
     
@@ -507,7 +498,7 @@ function CalendarAppContent() {
   };
 
   // Helpers
-  const openAddModal = (dateKey: string | null = null) => {
+  const openAddModal = (dateKey = null) => {
     setModalMode('add'); 
     setFormDate(dateKey || selectedDateKey); 
     setFormText(''); 
@@ -515,7 +506,7 @@ function CalendarAppContent() {
     setIsModalOpen(true);
   };
   
-  const openEditModal = (task: any) => {
+  const openEditModal = (task) => {
     setModalMode('edit'); 
     setFormDate(task.date); 
     setFormText(task.text); 
@@ -605,8 +596,8 @@ function CalendarAppContent() {
             )}
           </div>
           <div className="relative hidden sm:block">
-            <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600">{t.views[view as 'month' | 'week']} <ChevronDown size={14} /></button>
-            {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v as 'month' | 'week']}</button>)}</div>}
+            <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600">{t.views[view]} <ChevronDown size={14} /></button>
+            {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
           </div>
           <button onClick={() => openAddModal()} className={`w-9 h-9 ${theme.color} text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition`}><Plus size={20} /></button>
           {user ? (
@@ -642,7 +633,7 @@ function CalendarAppContent() {
               {/* --- MONTH VIEW --- */}
               {view === 'month' && (
                 <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200 min-w-[700px]">
-                  {monthCells.map((cell: any, idx) => {
+                  {monthCells.map((cell, idx) => {
                     // Feature 1: Monthly Notes in the FIRST empty slot of the grid
                     if (cell.type === 'empty') {
                       if (idx === 0) {
@@ -654,7 +645,7 @@ function CalendarAppContent() {
                                   theme={theme} 
                                   placeholder={t.notesPlaceholder}
                                   value={notes[monthStartKey]}
-                                  onChange={(val: string) => handleNoteChange(monthStartKey, val)}
+                                  onChange={(val) => handleNoteChange(monthStartKey, val)}
                                />
                             </div>
                          );
@@ -684,7 +675,7 @@ function CalendarAppContent() {
                           <button onClick={(e) => { e.stopPropagation(); openAddModal(cell.dateKey); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text}`}><Plus size={14} /></button>
                         </div>
                         <div className="space-y-0.5">
-                          {dayTasks.slice(0, 15).map((task: any) => (
+                          {dayTasks.slice(0, 15).map((task) => (
                             <TaskItem 
                               key={task.id} 
                               task={task} 
@@ -724,7 +715,7 @@ function CalendarAppContent() {
                           <button onClick={() => openAddModal(dateKey)} className={`text-slate-300 hover:${theme.text}`}><Plus size={18} /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar">
-                          {dayTasks.length > 0 ? dayTasks.map((task: any) => (
+                          {dayTasks.length > 0 ? dayTasks.map((task) => (
                              <TaskItem 
                                 key={task.id} 
                                 task={task} 
@@ -744,7 +735,7 @@ function CalendarAppContent() {
                   <NoteBlock 
                     title={t.weeklyNotes}
                     value={notes[weekStartKey]} 
-                    onChange={(val: string) => handleNoteChange(weekStartKey, val)}
+                    onChange={(val) => handleNoteChange(weekStartKey, val)}
                     theme={theme}
                     placeholder={t.notesPlaceholder}
                   />
@@ -761,7 +752,7 @@ function CalendarAppContent() {
           <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-2 sm:p-4 relative">
              <div className="text-2xl sm:text-4xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
              <div className="text-xs sm:text-base text-slate-500 font-medium uppercase tracking-wide text-center">{new Date(selectedDateKey).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { weekday: lang === 'zh' ? 'short' : 'long' })}</div>
-             <div className="text-[10px] sm:text-xs text-slate-400 mt-1 hidden sm:block">{(tasksMap[selectedDateKey] || []).filter((t: any) => !t.completed).length} pending</div>
+             <div className="text-[10px] sm:text-xs text-slate-400 mt-1 hidden sm:block">{(tasksMap[selectedDateKey] || []).filter((t) => !t.completed).length} pending</div>
              <button onClick={() => setIsHelpModalOpen(true)} className="absolute bottom-3 left-3 text-slate-400 hover:text-slate-600 transition-colors p-1" title={t.help}><HelpCircle size={18} /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -771,7 +762,7 @@ function CalendarAppContent() {
                   <button onClick={() => openAddModal(selectedDateKey)} className={`text-sm ${theme.text} hover:${theme.light} px-3 py-1 rounded-full transition flex items-center gap-1`}><Plus size={14} /> {t.addTask}</button>
                 </div>
                 <div className="space-y-1">
-                  {(tasksMap[selectedDateKey] || []).map((task: any) => (
+                  {(tasksMap[selectedDateKey] || []).map((task) => (
                     <TaskItem 
                       key={task.id} 
                       task={task} 
@@ -802,7 +793,7 @@ function CalendarAppContent() {
         t={t} 
         theme={theme}
         onClose={() => setShowAuthModal(false)}
-        onSubmit={async (e: any) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           setAuthLoading(true); setAuthMessage('');
           try {
@@ -812,7 +803,7 @@ function CalendarAppContent() {
             } else {
               await signInWithEmailAndPassword(auth, authEmail, authPassword);
             }
-          } catch (error: any) {
+          } catch (error) {
             let msg = error.message;
             if (msg.includes("email-already-in-use")) msg = "邮箱已被占用";
             if (msg.includes("invalid-credential")) msg = "账号或密码错误";
