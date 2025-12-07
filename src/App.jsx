@@ -572,8 +572,8 @@ function CalendarAppContent() {
   return (
     <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800">
       
-      {/* Header */}
-      <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-3 sm:px-6 py-3 flex items-center justify-between shadow-sm z-20`}>
+      {/* Header - Z-Index 提升到 50 */}
+      <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-3 sm:px-6 py-3 flex items-center justify-between shadow-sm z-50 relative`}>
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
           <div className="flex items-center gap-2 cursor-pointer group flex-shrink-0" onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}>
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg ${theme.color}`}>
@@ -605,7 +605,7 @@ function CalendarAppContent() {
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <button onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} className={`w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}><Palette size={18} className="text-slate-500" /></button>
           {isThemeMenuOpen && (
-              <div className="absolute top-16 right-4 sm:right-20 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-30 w-48 grid grid-cols-3 gap-2">
+              <div className="absolute top-16 right-4 sm:right-20 p-3 bg-white rounded-xl shadow-xl border border-slate-100 z-50 w-48 grid grid-cols-3 gap-2">
                 {THEMES.map((th) => <button key={th.id} onClick={() => { setCurrentThemeId(th.id); setIsThemeMenuOpen(false); }} className={`w-full aspect-square rounded-lg ${th.color} hover:opacity-80 ring-2 ${currentThemeId === th.id ? 'ring-slate-400' : 'ring-transparent'}`} />)}
               </div>
           )}
@@ -616,7 +616,7 @@ function CalendarAppContent() {
                <span className="hidden sm:inline">{t.views[view]}</span>
                <ChevronDown size={14} />
             </button>
-            {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
+            {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-50">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
           </div>
 
           <button onClick={() => openAddModal(selectedDateKey)} className={`w-9 h-9 ${theme.color} text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition`}><Plus size={20} /></button>
@@ -642,7 +642,7 @@ function CalendarAppContent() {
           {/* 日历卡片 - 移除 overflow-hidden，让它自然撑高 */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-w-[1000px]">
             
-            {/* Calendar Headings - 设为 Sticky 吸顶 */}
+            {/* Calendar Headings - 设为 Sticky 吸顶 (Z-Index 20, 低于 Header) */}
             {view === 'month' && (
               <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50 sticky top-0 z-20">
                   {t.weekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase">{day}</div>)}
