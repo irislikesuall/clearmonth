@@ -48,6 +48,7 @@ import {
 // ✅ Firebase 配置
 // ==========================================
 const firebaseConfig = {
+  // 尝试读取环境变量，如果失败则使用硬编码（适配 Vercel 和本地）
   apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
@@ -198,12 +199,6 @@ const getDayDiff = (d1, d2) => {
   const diffTime = Math.abs(date2 - date1);
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
 };
-// 增加天数
-const addDays = (dateStr, days) => {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return formatDateKey(d);
-};
 
 // ==========================================
 // 🧱 组件定义
@@ -265,8 +260,8 @@ const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayL
 
 // 3. 备忘录
 const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }) => (
-  <div className={`relative flex flex-col h-full ${type.includes('month') ? 'bg-yellow-50/60 p-2 sm:p-4 shadow-inner border border-yellow-100' : `border-b border-slate-200 ${theme.light} bg-opacity-30 p-3 sm:p-4 min-h-[180px]`}`}>
-    <div className={`flex items-center gap-2 mb-2 ${type.includes('month') ? '' : 'pb-2 border-b ' + theme.border}`}>
+  <div className={`relative flex flex-col h-full ${type.includes('month') ? 'bg-yellow-50/60 p-2 sm:p-4 shadow-inner border border-yellow-100' : `bg-white/50 hover:bg-white transition-colors`}`}>
+    <div className={`flex items-center gap-2 mb-2 ${type.includes('month') ? '' : 'pb-2 border-b border-slate-100'}`}>
       <StickyNote size={type.includes('month') ? 16 : 16} className={type.includes('month') ? 'text-yellow-600' : theme.text} />
       <span className={`font-bold ${type.includes('month') ? 'text-yellow-700 text-sm' : 'text-slate-700 text-sm'}`}>{title}</span>
     </div>
@@ -725,7 +720,8 @@ function CalendarAppContent() {
                   })}
                 </div>
               ) : (
-                <div className="grid grid-cols-4 auto-rows-fr min-h-full">
+                <div className="grid grid-cols-2 lg:grid-cols-4 auto-rows-fr min-h-full">
+                  {/* Days 1-7 */}
                   {weekDays.map((date, idx) => {
                     const dateKey = formatDateKey(date);
                     const dayTasks = tasksMap[dateKey] || [];
@@ -755,9 +751,15 @@ function CalendarAppContent() {
                       </div>
                     );
                   })}
-                  {/* 周视图可以简单地放这里，或者用绝对定位，这里简化放在最后 */}
-                  <div className="col-span-4 border-t border-slate-200">
-                     <NoteBlock title={t.weeklyNotes} theme={theme} value={notes[formatDateKey(weekDays[0])]} onChange={(v) => setNotes(prev => ({...prev, [formatDateKey(weekDays[0])]: v}))} placeholder={t.notesPlaceholder} />
+                  {/* Slot 8: Weekly Note (in the grid flow) */}
+                  <div className="border-r border-b border-slate-200 p-3 sm:p-4 flex flex-col min-h-[180px] bg-white/50">
+                     <NoteBlock 
+                        title={t.weeklyNotes} 
+                        theme={theme} 
+                        value={notes[formatDateKey(weekDays[0])]} 
+                        onChange={(v) => setNotes(prev => ({...prev, [formatDateKey(weekDays[0])]: v}))} 
+                        placeholder={t.notesPlaceholder} 
+                     />
                   </div>
                 </div>
               )}
@@ -766,9 +768,9 @@ function CalendarAppContent() {
         </div>
       </main>
       
-      {/* 底部详情区 (仅月视图) - 增高到 h-80 */}
+      {/* 底部详情区 (仅月视图) - 调整为 h-64 (256px) 解决屏幕遮挡问题 */}
       {view === 'month' && (
-        <div className="h-80 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div className="h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4">
              <div className="text-4xl sm:text-5xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
              <div className="text-sm uppercase text-slate-500 font-bold mt-2">{new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}</div>
