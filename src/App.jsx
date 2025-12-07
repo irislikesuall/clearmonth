@@ -642,8 +642,8 @@ function CalendarAppContent() {
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
         
         <div className="flex-1 overflow-auto bg-stone-50 p-2 sm:p-4 flex flex-col">
-          {/* 给外层容器添加 min-w-[1000px] 强制宽度，实现之前版本的左右拖动效果 */}
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-w-[1000px]">
+          {/* 给外层容器添加 min-w-[800px] 强制宽度，实现之前版本的左右拖动效果 */}
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-w-[800px]">
             
             {/* Calendar Headings */}
             {view === 'month' && (
