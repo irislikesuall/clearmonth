@@ -579,7 +579,7 @@ function CalendarAppContent() {
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg ${theme.color}`}>
               {lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}
             </div>
-            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName}</span>
+            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName} <span className="text-xs font-normal opacity-50 ml-1">v3.0</span></span>
           </div>
           <div className="flex items-center gap-1 bg-stone-100 rounded-full px-1.5 py-1 flex-shrink-0">
              <button onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm mr-1`}>{t.today}</button>
