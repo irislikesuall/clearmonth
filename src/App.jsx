@@ -24,19 +24,32 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Imports ---
-// @ts-ignore: Suppress TS error for imports
 import { initializeApp } from 'firebase/app';
-// @ts-ignore: Suppress TS error for imports
-import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, query, serverTimestamp } from 'firebase/firestore';
-// @ts-ignore: Suppress TS error for imports
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  query, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
 
 // ==========================================
 // ✅ Firebase 配置
 // ==========================================
 const firebaseConfig = {
-  // @ts-ignore
-  apiKey: ((import.meta as any).env && (import.meta as any).env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
+  // 修正：移除 "as any" 语法，使用标准的 JS 写法
+  apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
   storageBucket: "clearmonth-fdd18.firebasestorage.app",
@@ -152,21 +165,21 @@ const THEMES = [
 ];
 
 // 日期计算工具
-const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (year: number, month: number) => {
+const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+const getFirstDayOfMonth = (year, month) => {
   const day = new Date(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1; 
 };
-const formatDateKey = (date: Date) => {
+const formatDateKey = (date) => {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const isSameDate = (date1: Date, date2: Date) => {
+const isSameDate = (date1, date2) => {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
 };
-const getWeekRange = (date: Date) => {
+const getWeekRange = (date) => {
   const current = new Date(date);
   const day = current.getDay();
   const diff = current.getDate() - day + (day === 0 ? -6 : 1); 
@@ -180,17 +193,11 @@ const getWeekRange = (date: Date) => {
   return week;
 };
 // 计算天数差
-const getDayDiff = (d1: Date, d2: Date) => {
+const getDayDiff = (d1, d2) => {
   const date1 = new Date(d1);
   const date2 = new Date(d2);
-  const diffTime = Math.abs(date2.getTime() - date1.getTime());
+  const diffTime = Math.abs(date2 - date1);
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-};
-// 增加天数
-const addDays = (dateStr: string, days: number) => {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return formatDateKey(d);
 };
 
 // ==========================================
@@ -198,12 +205,12 @@ const addDays = (dateStr: string, days: number) => {
 // ==========================================
 
 // 1. Error Boundary
-class ErrorBoundary extends React.Component<any, any> {
-  constructor(props: any) {
+class ErrorBoundary extends React.Component {
+  constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
   render() {
     if (this.state.hasError) {
       return (
@@ -220,7 +227,7 @@ class ErrorBoundary extends React.Component<any, any> {
 }
 
 // 2. 任务项 (Draggable)
-const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayLabel }: any) => (
+const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayLabel }) => (
   <div 
     draggable="true"
     onDragStart={(e) => {
@@ -252,7 +259,7 @@ const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayL
 );
 
 // 3. 备忘录
-const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }: any) => (
+const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }) => (
   <div className={`relative flex flex-col h-full ${type.includes('month') ? 'bg-yellow-50/60 p-2 sm:p-4 shadow-inner border border-yellow-100' : `bg-white/50 hover:bg-white transition-colors`}`}>
     <div className={`flex items-center gap-2 mb-2 ${type.includes('month') ? '' : 'pb-2 border-b border-slate-100'}`}>
       <StickyNote size={type.includes('month') ? 16 : 16} className={type.includes('month') ? 'text-yellow-600' : theme.text} />
@@ -271,7 +278,7 @@ const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }
 // 🚀 主程序
 // ==========================================
 function CalendarAppContent() {
-  const [lang, setLang] = useState<'zh' | 'en'>('zh'); 
+  const [lang, setLang] = useState('zh'); 
   const t = TRANSLATIONS[lang];
   const [currentThemeId, setCurrentThemeId] = useState('orange');
   const theme = THEMES.find(th => th.id === currentThemeId) || THEMES[0];
@@ -280,16 +287,16 @@ function CalendarAppContent() {
   // 日历状态
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(formatDateKey(new Date()));
-  const [view, setView] = useState<'month' | 'week'>('month'); 
+  const [view, setView] = useState('month'); 
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
   // 数据状态
-  const [tasks, setTasks] = useState<any[]>([{ id: 'demo-1', date: formatDateKey(new Date()), endDate: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后数据自动云同步', completed: false }]);
-  const [notes, setNotes] = useState<any>({}); 
+  const [tasks, setTasks] = useState([{ id: 'demo-1', date: formatDateKey(new Date()), endDate: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后数据自动云同步', completed: false }]);
+  const [notes, setNotes] = useState({}); 
   const [dataLoading, setDataLoading] = useState(false);
   
   // 用户状态
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login'); 
   const [authEmail, setAuthEmail] = useState('');
@@ -300,21 +307,21 @@ function CalendarAppContent() {
   // 弹窗状态
   const [modalMode, setModalMode] = useState('add'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editingTask, setEditingTask] = useState(null);
   const [formText, setFormText] = useState('');
   const [formDetails, setFormDetails] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formEndDate, setFormEndDate] = useState(''); // 新增结束时间
-  const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, taskId: any}>({ show: false, taskId: null });
+  const [deleteConfirm, setDeleteConfirm] = useState({ show: false, taskId: null });
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
   // 拖拽状态
-  const [draggedTask, setDraggedTask] = useState<any>(null);
-  const [dragOverDate, setDragOverDate] = useState<any>(null);
+  const [draggedTask, setDraggedTask] = useState(null);
+  const [dragOverDate, setDragOverDate] = useState(null);
 
   // 性能优化 & 跨天逻辑处理：任务映射表 O(N)
   const tasksMap = useMemo(() => {
-    const map: any = {};
+    const map = {};
     tasks.forEach(task => {
       const startDate = new Date(task.date);
       const endDate = task.endDate ? new Date(task.endDate) : startDate;
@@ -383,20 +390,20 @@ function CalendarAppContent() {
 
   // --- 操作逻辑 ---
 
-  const handleDragStart = (e: any, task: any) => {
+  const handleDragStart = (e, task) => {
     setDraggedTask(task);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify(task)); 
     setTimeout(() => { if (e.target) e.target.style.opacity = '0.5'; }, 0);
   };
 
-  const handleDragEnd = (e: any) => {
+  const handleDragEnd = (e) => {
     if (e.target) e.target.style.opacity = '1';
     setDraggedTask(null);
     setDragOverDate(null);
   };
 
-  const handleDragOver = (e: any, dateKey: string) => {
+  const handleDragOver = (e, dateKey) => {
     e.preventDefault(); 
     e.dataTransfer.dropEffect = 'move';
     // 只有当拖拽到不同于开始日期时才高亮
@@ -405,7 +412,7 @@ function CalendarAppContent() {
     }
   };
 
-  const handleDrop = async (e: any, targetDateKey: string) => {
+  const handleDrop = async (e, targetDateKey) => {
     e.preventDefault();
     setDragOverDate(null);
     
@@ -413,7 +420,7 @@ function CalendarAppContent() {
       // 计算日期差，整体移动
       const oldStart = new Date(draggedTask.date);
       const newStart = new Date(targetDateKey);
-      const diffTime = newStart.getTime() - oldStart.getTime();
+      const diffTime = newStart - oldStart;
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
       
       const oldEnd = draggedTask.endDate ? new Date(draggedTask.endDate) : oldStart;
@@ -435,7 +442,7 @@ function CalendarAppContent() {
     setDraggedTask(null);
   };
 
-  const handleNavDrop = (e: any, direction: 'prev' | 'next') => {
+  const handleNavDrop = (e, direction) => {
     e.preventDefault();
     if (!draggedTask) return;
     
@@ -500,7 +507,7 @@ function CalendarAppContent() {
     if (user) await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', id));
   };
 
-  const openAddModal = (dateKey: string | null = null) => {
+  const openAddModal = (dateKey) => {
     setModalMode('add');
     setFormDate(dateKey || selectedDateKey);
     setFormEndDate(dateKey || selectedDateKey);
@@ -509,7 +516,7 @@ function CalendarAppContent() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (task: any) => {
+  const openEditModal = (task) => {
     setEditingTask(task);
     setFormText(task.text);
     setFormDetails(task.details);
@@ -572,7 +579,7 @@ function CalendarAppContent() {
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg ${theme.color}`}>
               {lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}
             </div>
-            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName}</span>
+            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName} <span className="text-xs font-normal opacity-50 ml-1">v3.0</span></span>
           </div>
           <div className="flex items-center gap-1 bg-stone-100 rounded-full px-1.5 py-1 flex-shrink-0">
              <button onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm mr-1`}>{t.today}</button>
@@ -609,7 +616,7 @@ function CalendarAppContent() {
                <span className="hidden sm:inline">{t.views[view]}</span>
                <ChevronDown size={14} />
             </button>
-            {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v as any); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v as 'month'|'week']}</button>)}</div>}
+            {isViewMenuOpen && <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-30">{['month', 'week'].map((v) => <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-medium` : 'text-slate-600'}`}>{t.views[v]}</button>)}</div>}
           </div>
 
           <button onClick={() => openAddModal(selectedDateKey)} className={`w-9 h-9 ${theme.color} text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition`}><Plus size={20} /></button>
@@ -629,41 +636,44 @@ function CalendarAppContent() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
         
-        <div className="flex-1 overflow-auto bg-stone-50 p-2 sm:p-4 flex flex-col">
-          {/* 给外层容器添加 min-w-[800px] 强制宽度，实现之前版本的左右拖动效果 */}
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-w-[800px]">
+        {/* 外层滚动容器，处理所有滚动 (Single Scroll Container) */}
+        <div className="flex-1 overflow-auto bg-stone-50 p-2 sm:p-4">
+          
+          {/* 日历卡片 - 移除 overflow-hidden，让它自然撑高 */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-w-[1000px]">
             
-            {/* Calendar Headings */}
+            {/* Calendar Headings - 设为 Sticky 吸顶 */}
             {view === 'month' && (
-              <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50">
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50 sticky top-0 z-20">
                   {t.weekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase">{day}</div>)}
               </div>
             )}
 
             {/* Grid Content */}
-            <div className="flex-1 bg-white">
+            <div className="bg-white">
               {view === 'month' ? (
-                <div className="grid grid-cols-7 auto-rows-fr min-h-full border-l border-slate-200">
-                  {monthCells.map((cell: any, idx) => {
+                // 移除 auto-rows-fr，改为默认 auto，允许行高自适应
+                <div className="grid grid-cols-7 border-l border-slate-200">
+                  {monthCells.map((cell, idx) => {
                     // A. 月度备忘录 (跨列)
                     if (cell.type === 'note') {
                       const monthKey = formatDateKey(new Date(year, month, 1));
                       return (
-                        <div key={cell.key} style={{ gridColumn: `span ${cell.colSpan}` }} className="border-b border-r border-slate-200">
+                        <div key={cell.key} style={{ gridColumn: `span ${cell.colSpan}` }} className="border-b border-r border-slate-200 min-h-[120px]">
                           <NoteBlock 
                             type="month-large"
                             title={t.monthlyNotes} 
                             theme={theme} 
                             placeholder={t.notesPlaceholder}
                             value={notes[monthKey]}
-                            onChange={(val: string) => setNotes((prev: any) => ({ ...prev, [monthKey]: val }))}
+                            onChange={(val) => setNotes(prev => ({ ...prev, [monthKey]: val }))}
                           />
                         </div>
                       );
                     }
 
                     // B. 空格子
-                    if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[100px]" />;
+                    if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[120px]" />;
 
                     // C. 日期格子
                     const dayTasks = tasksMap[cell.dateKey] || [];
@@ -688,14 +698,14 @@ function CalendarAppContent() {
                             <button onClick={(e) => { e.stopPropagation(); openAddModal(cell.dateKey); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text}`}><Plus size={14} /></button>
                          </div>
                          <div className="space-y-0.5">
-                            {dayTasks.map((task: any) => (
+                            {dayTasks.map(task => (
                               <TaskItem 
                                 key={task.id} 
                                 task={task} 
                                 theme={theme} 
                                 isCompact={true}
                                 dayLabel={task.dayLabel} 
-                                onClick={(t: any, toggle: boolean) => {
+                                onClick={(t, toggle) => {
                                    if (toggle) {
                                      const updated = { ...t, completed: !t.completed };
                                      setTasks(prev => prev.map(pt => pt.id === t.id ? updated : pt));
@@ -731,7 +741,7 @@ function CalendarAppContent() {
                            <button onClick={() => openAddModal(dateKey)}><Plus size={16} className="text-slate-300 hover:text-slate-600" /></button>
                          </div>
                          <div className="space-y-2 flex-1">
-                           {dayTasks.map((task: any) => (
+                           {dayTasks.map(task => (
                              <TaskItem 
                                key={task.id} task={task} theme={theme} 
                                dayLabel={task.dayLabel}
@@ -750,7 +760,7 @@ function CalendarAppContent() {
                         title={t.weeklyNotes} 
                         theme={theme} 
                         value={notes[formatDateKey(weekDays[0])]} 
-                        onChange={(v: string) => setNotes((prev: any) => ({...prev, [formatDateKey(weekDays[0])]: v}))} 
+                        onChange={(v) => setNotes(prev => ({...prev, [formatDateKey(weekDays[0])]: v}))} 
                         placeholder={t.notesPlaceholder} 
                      />
                   </div>
@@ -761,9 +771,9 @@ function CalendarAppContent() {
         </div>
       </main>
       
-      {/* 底部详情区 (仅月视图) - 调整为 h-64 */}
+      {/* 底部详情区 (仅月视图) - 调整为 h-64 (256px) 解决屏幕遮挡问题 */}
       {view === 'month' && (
-        <div className="h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div className="h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20 relative">
           <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4">
              <div className="text-4xl sm:text-5xl font-bold text-slate-800">{new Date(selectedDateKey).getDate()}</div>
              <div className="text-sm uppercase text-slate-500 font-bold mt-2">{new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}</div>
@@ -777,7 +787,7 @@ function CalendarAppContent() {
                </button>
              </div>
              <div className="space-y-2">
-                {(tasksMap[selectedDateKey] || []).map((task: any) => (
+                {(tasksMap[selectedDateKey] || []).map(task => (
                    <TaskItem 
                      key={task.id} task={task} theme={theme} 
                      dayLabel={task.dayLabel}
@@ -803,7 +813,7 @@ function CalendarAppContent() {
                  try {
                    if (authMode === 'signup') { await createUserWithEmailAndPassword(auth, authEmail, authPassword); setAuthMessage(t.checkEmail); }
                    else { await signInWithEmailAndPassword(auth, authEmail, authPassword); }
-                 } catch (err: any) { alert(err.message); } finally { setAuthLoading(false); }
+                 } catch (err) { alert(err.message); } finally { setAuthLoading(false); }
               }} className="space-y-4">
                  <input type="email" placeholder={t.email} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} required />
                  <input type="password" placeholder={t.password} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required />
@@ -888,6 +898,7 @@ function CalendarAppContent() {
   );
 }
 
+// 封装导出，加上 ErrorBoundary
 export default function App() {
   return (
     <ErrorBoundary>
