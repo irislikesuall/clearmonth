@@ -280,14 +280,13 @@ function CalendarAppContent() {
   const [lang, setLang] = useState('zh'); 
   const t = TRANSLATIONS[lang];
   
-  // 1. 主题持久化：从 localStorage 初始化，默认 orange
+  // 1. 主题持久化
   const [currentThemeId, setCurrentThemeId] = useState(() => {
     return localStorage.getItem('saas_theme_v3') || 'orange';
   });
   const theme = THEMES.find(th => th.id === currentThemeId) || THEMES[0];
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
 
-  // 监听主题变化并保存
   useEffect(() => {
     localStorage.setItem('saas_theme_v3', currentThemeId);
   }, [currentThemeId]);
@@ -299,11 +298,10 @@ function CalendarAppContent() {
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
   // 数据状态
-  // 核心修复：初始为空数组，等待加载，防止覆盖
   const [tasks, setTasks] = useState([]); 
   const [notes, setNotes] = useState({}); 
   const [dataLoading, setDataLoading] = useState(true);
-  const [isDataLoaded, setIsDataLoaded] = useState(false); // 数据加载完成标志位
+  const [isDataLoaded, setIsDataLoaded] = useState(false); // 数据锁
   
   // 用户状态
   const [user, setUser] = useState(null);
@@ -368,17 +366,20 @@ function CalendarAppContent() {
 
   // 数据同步逻辑 (核心修复)
   useEffect(() => {
+    // 🛑 核心修复：每次用户状态改变，立刻上锁，防止旧数据污染
+    setIsDataLoaded(false);
     setDataLoading(true);
+    setTasks([]); // 清空当前视图
+    setNotes({}); // 清空当前备忘
 
     if (!user) {
-      // 游客模式：从 LocalStorage 读取
+      // 游客模式
       const localTasks = localStorage.getItem('saas_tasks_v3');
       const localNotes = localStorage.getItem('saas_notes_v3');
       
       if (localTasks) {
         try { setTasks(JSON.parse(localTasks)); } catch {}
       } else {
-        // 只有在本地完全没有数据时，才写入演示数据
         setTasks([{ id: 'demo-1', date: formatDateKey(new Date()), endDate: formatDateKey(new Date()), text: '欢迎使用清月历', details: '数据保存在本地，登录后可云同步。', completed: false }]);
       }
 
@@ -387,27 +388,32 @@ function CalendarAppContent() {
       }
       
       setDataLoading(false);
-      setIsDataLoaded(true); // 标记加载完成，允许后续写入
+      setIsDataLoaded(true); // 解锁
       return;
     }
 
-    // 用户模式：从 Firestore 读取
+    // 用户模式：加载备忘录
+    const savedNotes = localStorage.getItem(`saas_notes_${user.uid}`);
+    if (savedNotes) {
+      try { setNotes(JSON.parse(savedNotes)); } catch {}
+    } else {
+      setNotes({});
+    }
+
+    // 用户模式：监听 Firestore 任务
     const q = query(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks'));
     const unsub = onSnapshot(q, (snap) => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setDataLoading(false);
-      setIsDataLoaded(true); // 标记加载完成
+      setIsDataLoaded(true); // 解锁
     });
     
-    const savedNotes = localStorage.getItem(`saas_notes_${user.uid}`);
-    if (savedNotes) try { setNotes(JSON.parse(savedNotes)); } catch {}
-
     return () => unsub();
   }, [user]);
 
   // 数据保存逻辑 (仅在 isDataLoaded 为 true 时执行)
   useEffect(() => {
-    if (!isDataLoaded) return; // 如果还没加载完，严禁写入，防止覆盖
+    if (!isDataLoaded) return; // 🛑 数据未加载完，严禁写入，防止覆盖
 
     if (!user) {
       localStorage.setItem('saas_tasks_v3', JSON.stringify(tasks));
@@ -461,7 +467,6 @@ function CalendarAppContent() {
       
       if (user) {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', draggedTask.id);
-        // 修复：补全 endDate，确保跨天任务同步正确
         await updateDoc(ref, { date: targetDateKey, endDate: newEndDateKey });
       }
     }
@@ -518,7 +523,6 @@ function CalendarAppContent() {
       setIsModalOpen(false);
       if (user) {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', updated.id);
-        // 修复：补全 endDate
         await updateDoc(ref, { text: updated.text, details: updated.details, date: updated.date, endDate: updated.endDate });
       }
     }
@@ -527,10 +531,21 @@ function CalendarAppContent() {
   const deleteTask = async () => {
     if (!deleteConfirm.taskId) return;
     const id = deleteConfirm.taskId;
+    
+    // 乐观更新：先从界面移除
     setTasks(prev => prev.filter(t => t.id !== id));
     setDeleteConfirm({ show: false, taskId: null });
     setIsModalOpen(false);
-    if (user) await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', id));
+    
+    // 数据库删除
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', id));
+      } catch (e) {
+        console.error("Delete failed:", e);
+        alert("删除失败，请检查网络或刷新页面");
+      }
+    }
   };
 
   const openAddModal = (dateKey) => {
@@ -596,7 +611,7 @@ function CalendarAppContent() {
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg ${theme.color}`}>
               {lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}
             </div>
-            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName} <span className="text-xs font-normal opacity-50 ml-1">v3.1</span></span>
+            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName} <span className="text-xs font-normal opacity-50 ml-1">v3.2</span></span>
           </div>
           <div className="flex items-center gap-1 bg-stone-100 rounded-full px-1.5 py-1 flex-shrink-0">
              <button onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm mr-1`}>{t.today}</button>
@@ -720,7 +735,7 @@ function CalendarAppContent() {
                                      const updated = { ...t, completed: !t.completed };
                                      setTasks(prev => prev.map(pt => pt.id === t.id ? updated : pt));
                                      if(user) {
-                                        // 修复：补全 endDate，防止同步时丢失
+                                        // 🛑 修复：更新状态时补全 endDate，防止数据丢失
                                         updateDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', t.id), { completed: updated.completed, endDate: t.endDate || t.date });
                                      }
                                    } else {
