@@ -475,59 +475,97 @@ const handleToggleTask = async (task) => {
 
   const handleSaveTask = async () => {
     if (!formText.trim()) return;
-    
+
     const finalEndDate = formEndDate || formDate;
 
+    // 新建任务
     if (modalMode === 'add') {
       const tempId = Date.now().toString();
-      const newTask = { 
-        id: tempId, 
-        date: formDate, 
+      const newTask = {
+        id: tempId,
+        date: formDate,
         endDate: finalEndDate,
-        text: formText, 
-        details: formDetails, 
-        completed: false 
+        text: formText,
+        details: formDetails,
+        completed: false,
       };
-      
-      setTasks(prev => [...prev, newTask]);
+
+      // 本地乐观添加
+      setTasks((prev) => [...prev, newTask]);
       setIsModalOpen(false);
 
+      // 登录状态下，同步到云端
       if (user) {
         try {
+          // 不把临时 id 写进 Firestore
           const { id, ...payload } = newTask;
           const docRef = await addDoc(
-            colllection(db, 'artifacts', APP_ID, 'users', user.uid, 'task'),
+            collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks'),
             {
               ...payload,
-              createAt: serverTimestamp()
+              createdAt: serverTimestamp(),
             }
-            );
-          setTasks(prev => prev.map(t => t.id === temId ? { ...t, id: docRef.id}
-            } catch (e) {
-          console.error(e);
-          setTasks(prev => prev.filter(t => t.id !==tempId);
-          alert(lang === 'zh' ? ''任务保存失败，请检查网络' : 'Failed to save task');
-  }
-      }       
-            
+          );
+
+          // 用真正的 docId 替换本地临时 id
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === tempId ? { ...t, id: docRef.id } : t
+            )
+          );
+        } catch (e) {
+          console.error('addDoc error:', e);
+          // 回滚本地
+          setTasks((prev) => prev.filter((t) => t.id !== tempId));
+          alert(
+            lang === 'zh'
+              ? '任务保存失败，请检查网络'
+              : 'Failed to save task'
+          );
+        }
+      }
+
+    // 编辑任务
     } else if (editingTask) {
-      const updated = { ...editingTask, date: formDate, endDate: finalEndDate, text: formText, details: formDetails };
-      
-      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+      const updated = {
+        ...editingTask,
+        date: formDate,
+        endDate: finalEndDate,
+        text: formText,
+        details: formDetails,
+      };
+
+      // 本地更新
+      setTasks((prev) =>
+        prev.map((t) => (t.id === updated.id ? updated : t))
+      );
       setIsModalOpen(false);
 
+      // 登录状态下同步到云端
       if (user) {
         try {
-          const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', updated.id);
-          await updateDoc(ref, { 
-            text: updated.text, 
-            details: updated.details, 
-            date: updated.date, 
-            endDate: updated.endDate 
+          const ref = doc(
+            db,
+            'artifacts',
+            APP_ID,
+            'users',
+            user.uid,
+            'tasks',
+            updated.id
+          );
+          await updateDoc(ref, {
+            text: updated.text,
+            details: updated.details,
+            date: updated.date,
+            endDate: updated.endDate,
           });
         } catch (e) {
-          console.error(e);
-          alert("Failed to update task");
+          console.error('updateDoc error:', e);
+          alert(
+            lang === 'zh'
+              ? '更新任务失败，请检查网络'
+              : 'Failed to update task'
+          );
         }
       }
     }
