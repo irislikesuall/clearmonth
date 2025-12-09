@@ -27,7 +27,7 @@ import 'firebase/compat/auth';
 // ✅ Firebase Config
 // ==========================================
 const firebaseConfig = {
-  apiKey: ((import.meta as any).env && (import.meta as any).env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
+  apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
   storageBucket: "clearmonth-fdd18.firebasestorage.app",
