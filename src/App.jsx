@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -18,10 +18,26 @@ import {
   StickyNote
 } from 'lucide-react';
 
-// --- Firebase Imports ---
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/firestore';
-import 'firebase/compat/auth';
+// --- Firebase Imports (Modular SDK) ---
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  query, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
 
 // ==========================================
 // ✅ Firebase Config
@@ -30,48 +46,22 @@ const firebaseConfig = {
   apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
-  storageBucket: "clearmonth-fdd18.firebasestorage.app",
+  storageBucket: "clearmonth-fdd18.appspot.com",
   messagingSenderId: "586292348802",
   appId: "1:586292348802:web:1d7bf1db3ed7aaedadb19b"
 };
 
 // Initialize Firebase
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-const auth = firebase.auth();
-const db = firebase.firestore();
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 const APP_ID = 'clearmonth-app';
 
 // ==========================================
-// 🧩 Types & Constants
+// 🧩 Constants
 // ==========================================
 
-// Type alias for Firebase User
-type User = firebase.User;
-
-interface Task {
-  id: string;
-  text: string;
-  details?: string;
-  date: string; // YYYY-MM-DD
-  endDate?: string; // YYYY-MM-DD
-  completed: boolean;
-  createdAt?: any;
-  // Computed for UI
-  isMultiDay?: boolean;
-  dayLabel?: string | null;
-}
-
-interface NoteMap {
-  [key: string]: string;
-}
-
-interface Translation {
-  [key: string]: any;
-}
-
-const TRANSLATIONS: { [key: string]: Translation } = {
+const TRANSLATIONS = {
   en: {
     appName: 'ClearMonth',
     weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -170,23 +160,23 @@ const THEMES = [
 ];
 
 // Utilities
-const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (year: number, month: number) => {
+const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+const getFirstDayOfMonth = (year, month) => {
   const day = new Date(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1; 
 };
-const formatDateKey = (date: Date) => {
+const formatDateKey = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
-const isSameDate = (date1: Date, date2: Date) => {
+const isSameDate = (date1, date2) => {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
 };
-const getWeekRange = (date: Date) => {
+const getWeekRange = (date) => {
   const current = new Date(date);
   const day = current.getDay();
   const diff = current.getDate() - day + (day === 0 ? -6 : 1); 
@@ -199,7 +189,7 @@ const getWeekRange = (date: Date) => {
   }
   return week;
 };
-const getDayDiff = (d1: string | Date, d2: string | Date) => {
+const getDayDiff = (d1, d2) => {
   const date1 = new Date(d1);
   const date2 = new Date(d2);
   const diffTime = Math.abs(date2.getTime() - date1.getTime());
@@ -210,12 +200,12 @@ const getDayDiff = (d1: string | Date, d2: string | Date) => {
 // 🧱 Components
 // ==========================================
 
-class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
-  constructor(props: any) {
+class ErrorBoundary extends React.Component {
+  constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
   render() {
     if (this.state.hasError) {
       return (
@@ -231,17 +221,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
 }
 
-interface TaskItemProps {
-  task: Task;
-  theme: any;
-  isCompact?: boolean;
-  onClick: (task: Task, isToggle?: boolean) => void;
-  onDelete?: (taskId: string) => void;
-  onDragStart: (e: React.DragEvent, task: Task) => void;
-  dayLabel?: string | null;
-}
-
-const TaskItem: React.FC<TaskItemProps> = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayLabel }) => (
+const TaskItem = ({ task, theme, isCompact, onClick, onDelete, onDragStart, dayLabel }) => (
   <div 
     draggable="true"
     onDragStart={(e) => {
@@ -283,7 +263,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, theme, isCompact, onClick, on
   </div>
 );
 
-const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }: any) => (
+const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }) => (
   <div className={`relative flex flex-col h-full ${type.includes('month') ? 'bg-amber-50/50 p-2 sm:p-4 hover:bg-amber-50' : `bg-white/50 hover:bg-white`} transition-colors duration-200`}>
     <div className={`flex items-center gap-2 mb-2 ${type.includes('month') ? '' : 'pb-2 border-b border-slate-100'}`}>
       <StickyNote size={type.includes('month') ? 16 : 16} className={type.includes('month') ? 'text-amber-500' : theme.text} />
@@ -302,12 +282,11 @@ const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }
 // 🚀 Main Application
 // ==========================================
 function CalendarAppContent() {
-  const [lang, setLang] = useState<'en' | 'zh'>('zh'); 
+  const [lang, setLang] = useState('zh'); 
   const t = TRANSLATIONS[lang];
   
-  // --- 1. Theme Persistence (Fixing Issue #1) ---
+  // --- 1. Theme Persistence ---
   const [currentThemeId, setCurrentThemeId] = useState(() => {
-    // Explicitly read from localStorage on initialization
     if (typeof window !== 'undefined') {
       return localStorage.getItem('saas_theme_v3') || 'orange';
     }
@@ -316,7 +295,6 @@ function CalendarAppContent() {
   const theme = THEMES.find(th => th.id === currentThemeId) || THEMES[0];
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
 
-  // Sync theme changes to localStorage immediately
   useEffect(() => {
     localStorage.setItem('saas_theme_v3', currentThemeId);
   }, [currentThemeId]);
@@ -324,46 +302,44 @@ function CalendarAppContent() {
   // --- Calendar State ---
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(formatDateKey(new Date()));
-  const [view, setView] = useState<'month' | 'week'>('month'); 
+  const [view, setView] = useState('month'); 
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
   // --- Data State ---
-  const [tasks, setTasks] = useState<Task[]>([]); 
-  const [notes, setNotes] = useState<NoteMap>({}); 
+  const [tasks, setTasks] = useState([]); 
+  const [notes, setNotes] = useState({}); 
   const [dataLoading, setDataLoading] = useState(true);
   
-  // Helper to prevent race conditions during auth switches
   const isUserLoadedRef = useRef(false);
   
   // --- Auth State ---
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login'); 
+  const [authMode, setAuthMode] = useState('login'); 
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
   // --- Modal State ---
-  const [modalMode, setModalMode] = useState<'add' | 'edit'>('add'); 
+  const [modalMode, setModalMode] = useState('add'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingTask, setEditingTask] = useState(null);
   const [formText, setFormText] = useState('');
   const [formDetails, setFormDetails] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formEndDate, setFormEndDate] = useState(''); 
-  const [deleteConfirm, setDeleteConfirm] = useState({ show: false, taskId: null as string | null });
+  const [deleteConfirm, setDeleteConfirm] = useState({ show: false, taskId: null });
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
   // --- DND State ---
-  const [draggedTask, setDraggedTask] = useState<Task | null>(null);
-  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [draggedTask, setDraggedTask] = useState(null);
+  const [dragOverDate, setDragOverDate] = useState(null);
 
   // --- Computed Tasks Map ---
   const tasksMap = useMemo(() => {
-    const map: { [key: string]: Task[] } = {};
+    const map = {};
     tasks.forEach(task => {
-      // Safety check for date validity
       if (!task.date) return;
 
       const startDate = new Date(task.date);
@@ -373,7 +349,6 @@ function CalendarAppContent() {
       let dayIndex = 1;
       const totalDays = getDayDiff(startDate, endDate) + 1;
       
-      // Prevent infinite loops if dates are crazy
       if (totalDays > 365) return; 
 
       while (current <= endDate) {
@@ -395,7 +370,7 @@ function CalendarAppContent() {
 
   // --- Auth Listener ---
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
         setShowAuthModal(false);
@@ -406,22 +381,18 @@ function CalendarAppContent() {
     return () => unsubscribe();
   }, []);
 
-  // --- Data Synchronization Logic (Fixing Issues 2, 3, 4) ---
-  
-  // 1. Load Data Effect
+  // --- Data Synchronization Logic ---
   useEffect(() => {
     setDataLoading(true);
-    isUserLoadedRef.current = false; // Reset lock
+    isUserLoadedRef.current = false;
 
     if (!user) {
-      // GUEST MODE: Load from LocalStorage
       const localTasks = localStorage.getItem('saas_tasks_v3');
       const localNotes = localStorage.getItem('saas_notes_v3');
       
       if (localTasks) {
         try { setTasks(JSON.parse(localTasks)); } catch(e) { console.error("Parse error", e); setTasks([]); }
       } else {
-        // Initial Demo Data
         setTasks([{ 
           id: 'demo-1', 
           date: formatDateKey(new Date()), 
@@ -438,13 +409,10 @@ function CalendarAppContent() {
         setNotes({});
       }
       
-      isUserLoadedRef.current = true; // Unlock for saving
+      isUserLoadedRef.current = true;
       setDataLoading(false);
 
     } else {
-      // USER MODE: Load from Firestore & User-Specific LocalStorage for Notes
-      
-      // Load Notes (Fixing Issue #4: Use specific key per user)
       const userNotesKey = `saas_notes_${user.uid}`;
       const savedNotes = localStorage.getItem(userNotesKey);
       if (savedNotes) {
@@ -453,13 +421,12 @@ function CalendarAppContent() {
         setNotes({});
       }
 
-      // Realtime Tasks Listener
-      const tasksRef = db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('tasks');
-      const unsub = tasksRef.onSnapshot((snap) => {
-        const loadedTasks = snap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
+      const tasksRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks');
+      const unsub = onSnapshot(tasksRef, (snap) => {
+        const loadedTasks = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setTasks(loadedTasks);
         
-        isUserLoadedRef.current = true; // Unlock for saving notes
+        isUserLoadedRef.current = true;
         setDataLoading(false);
       }, (err) => {
         console.error("Firestore Error:", err);
@@ -470,38 +437,30 @@ function CalendarAppContent() {
     }
   }, [user, lang]);
 
-  // 2. Save Data Effect
   useEffect(() => {
-    // Only save if data has finished loading to prevent overwriting with empty state
     if (!isUserLoadedRef.current) return;
 
     if (!user) {
-      // Guest: Save everything to generic keys
       localStorage.setItem('saas_tasks_v3', JSON.stringify(tasks));
       localStorage.setItem('saas_notes_v3', JSON.stringify(notes));
     } else {
-      // User: Save notes to user-specific key (Tasks saved via Firestore)
       localStorage.setItem(`saas_notes_${user.uid}`, JSON.stringify(notes));
     }
   }, [tasks, notes, user]);
 
   // --- Actions ---
 
-  const handleToggleTask = async (task: Task) => {
+  const handleToggleTask = async (task) => {
     const newStatus = !task.completed;
     
-    // 1. Optimistic Update (Fixing Issue #5)
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: newStatus } : t));
 
-    // 2. Persist
     if (user) {
       try {
-        const ref = db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('tasks').doc(task.id);
-        // Explicitly update only the completion status
-        await ref.update({ completed: newStatus });
+        const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', task.id);
+        await updateDoc(ref, { completed: newStatus });
       } catch (error) {
         console.error("Failed to update task status:", error);
-        // Rollback on error
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: !newStatus } : t));
         alert(lang === 'zh' ? '更新失败，请检查网络' : 'Update failed, check connection');
       }
@@ -515,7 +474,7 @@ function CalendarAppContent() {
 
     if (modalMode === 'add') {
       const tempId = Date.now().toString();
-      const newTask: Task = { 
+      const newTask = { 
         id: tempId, 
         date: formDate, 
         endDate: finalEndDate,
@@ -524,35 +483,32 @@ function CalendarAppContent() {
         completed: false 
       };
       
-      // Optimistic Add
       setTasks(prev => [...prev, newTask]);
       setIsModalOpen(false);
 
       if (user) {
         try {
-          const docRef = await db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('tasks').add({
+          const docRef = await addDoc(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks'), {
             ...newTask, 
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            createdAt: serverTimestamp()
           });
-          // Update local ID with real Firestore ID
           setTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: docRef.id } : t));
         } catch (e) { 
           console.error(e);
-          setTasks(prev => prev.filter(t => t.id !== tempId)); // Rollback
+          setTasks(prev => prev.filter(t => t.id !== tempId));
           alert("Failed to save task");
         }
       }
     } else if (editingTask) {
-      const updated: Task = { ...editingTask, date: formDate, endDate: finalEndDate, text: formText, details: formDetails };
+      const updated = { ...editingTask, date: formDate, endDate: finalEndDate, text: formText, details: formDetails };
       
-      // Optimistic Update
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
       setIsModalOpen(false);
 
       if (user) {
         try {
-          const ref = db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('tasks').doc(updated.id);
-          await ref.update({ 
+          const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', updated.id);
+          await updateDoc(ref, { 
             text: updated.text, 
             details: updated.details, 
             date: updated.date, 
@@ -570,21 +526,15 @@ function CalendarAppContent() {
     if (!deleteConfirm.taskId) return;
     const id = deleteConfirm.taskId;
     
-    // 1. Optimistic Update
     setTasks(prev => prev.filter(t => t.id !== id));
     setDeleteConfirm({ show: false, taskId: null });
     setIsModalOpen(false);
     
-    // 2. Persist (Fixing Issue #2 & #3)
     if (user) {
       try {
-        await db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('tasks').doc(id).delete();
+        await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', id));
       } catch (e) {
         console.error("Delete failed:", e);
-        // We can't easily rollback the whole state here without re-fetching, 
-        // but since we have a snapshot listener, if the delete fails on server, 
-        // the snapshot *should* technically revert it if we reloaded. 
-        // But to be safe, alert the user.
         alert(lang === 'zh' ? "删除失败" : "Delete failed");
       }
     }
@@ -592,13 +542,13 @@ function CalendarAppContent() {
 
   // --- DND Logic ---
 
-  const handleDragStart = (e: React.DragEvent, task: Task) => {
+  const handleDragStart = (e, task) => {
     setDraggedTask(task);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify(task)); 
   };
 
-  const handleDragOver = (e: React.DragEvent, dateKey: string) => {
+  const handleDragOver = (e, dateKey) => {
     e.preventDefault(); 
     e.dataTransfer.dropEffect = 'move';
     if (draggedTask && dateKey && draggedTask.date !== dateKey) {
@@ -606,7 +556,7 @@ function CalendarAppContent() {
     }
   };
 
-  const handleDrop = async (e: React.DragEvent, targetDateKey: string) => {
+  const handleDrop = async (e, targetDateKey) => {
     e.preventDefault();
     setDragOverDate(null);
     
@@ -626,8 +576,8 @@ function CalendarAppContent() {
       setTasks(prev => prev.map(t => t.id === draggedTask.id ? updatedTask : t));
       
       if (user) {
-        const ref = db.collection('artifacts').doc(APP_ID).collection('users').doc(user.uid).collection('tasks').doc(draggedTask.id);
-        await ref.update({ date: targetDateKey, endDate: newEndDateKey });
+        const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', draggedTask.id);
+        await updateDoc(ref, { date: targetDateKey, endDate: newEndDateKey });
       }
     }
     setDraggedTask(null);
@@ -635,7 +585,7 @@ function CalendarAppContent() {
 
   // --- UI Helpers ---
 
-  const openAddModal = (dateKey: string) => {
+  const openAddModal = (dateKey) => {
     setModalMode('add');
     setFormDate(dateKey || selectedDateKey);
     setFormEndDate(dateKey || selectedDateKey);
@@ -644,7 +594,7 @@ function CalendarAppContent() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (task: Task) => {
+  const openEditModal = (task) => {
     setEditingTask(task);
     setFormText(task.text);
     setFormDetails(task.details || '');
@@ -661,7 +611,6 @@ function CalendarAppContent() {
   const daysInMonth = getDaysInMonth(year, month);
   const firstDayObj = getFirstDayOfMonth(year, month); 
   
-  // Logic for grid empty cells (Note placement)
   const startEmptyCount = firstDayObj;
   const totalDaysSoFar = startEmptyCount + daysInMonth;
   const endEmptyCount = (7 - (totalDaysSoFar % 7)) % 7;
@@ -692,7 +641,10 @@ function CalendarAppContent() {
       {/* Header */}
       <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-4 py-3 flex items-center justify-between shadow-sm z-50 relative`}>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 cursor-pointer group select-none" onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}>
+          <div
+            className="flex items-center gap-2 cursor-pointer group select-none"
+            onClick={() => setLang((l) => l === 'en' ? 'zh' : 'en')}
+          >
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-lg ${theme.color} transform group-hover:rotate-12 transition-transform duration-300`}>
               {lang === 'zh' ? <span className="font-serif font-bold text-lg">月</span> : <CalendarIcon size={20} />}
             </div>
@@ -700,20 +652,44 @@ function CalendarAppContent() {
           </div>
 
           <div className="flex items-center gap-1 bg-slate-100/80 rounded-full px-1.5 py-1">
-             <button onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm`}>{t.today}</button>
-             <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))} className={`p-1.5 hover:bg-white rounded-full transition text-slate-500 hover:${theme.text}`}><ChevronLeft size={16} /></button>
-             <div className="relative group cursor-pointer w-28 text-center">
-               <span className="font-semibold text-sm select-none">{currentDate.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}</span>
-               <input type="month" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => { if(e.target.value) setCurrentDate(new Date(e.target.value + '-01')); }} />
-             </div>
-             <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)))} className={`p-1.5 hover:bg-white rounded-full transition text-slate-500 hover:${theme.text}`}><ChevronRight size={16} /></button>
+            <button
+              onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }}
+              className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm`}
+            >
+              {t.today}
+            </button>
+            <button
+              onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))}
+              className={`p-1.5 hover:bg-white rounded-full transition text-slate-500 hover:${theme.text}`}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div className="relative group cursor-pointer w-28 text-center">
+              <span className="font-semibold text-sm select-none">
+                {currentDate.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}
+              </span>
+              <input
+                type="month"
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                onChange={(e) => { if(e.target.value) setCurrentDate(new Date(e.target.value + '-01')); }}
+              />
+            </div>
+            <button
+              onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)))}
+              className={`p-1.5 hover:bg-white rounded-full transition text-slate-500 hover:${theme.text}`}
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           {/* Theme Toggle */}
           <div className="relative">
-            <button onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)} className={`w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 transition-colors ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}>
+            <button
+              onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)}
+              className={`w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 transition-colors ${isThemeMenuOpen ? 'bg-slate-100' : ''}`}
+            >
               <Palette size={18} className="text-slate-500" />
             </button>
             {isThemeMenuOpen && (
@@ -734,17 +710,24 @@ function CalendarAppContent() {
           
           {/* View Toggle */}
           <div className="relative">
-            <button onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:border-slate-300 transition-colors">
-               {view === 'month' ? <Layout size={16} /> : <Clock size={16} />}
-               <span className="hidden sm:inline">{t.views[view]}</span>
-               <ChevronDown size={14} />
+            <button
+              onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:border-slate-300 transition-colors"
+            >
+              {view === 'month' ? <Layout size={16} /> : <Clock size={16} />}
+              <span className="hidden sm:inline">{t.views[view]}</span>
+              <ChevronDown size={14} />
             </button>
             {isViewMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsViewMenuOpen(false)}></div>
                 <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-lg shadow-xl border border-slate-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-200">
-                  {['month', 'week'].map((v: any) => (
-                    <button key={v} onClick={() => { setView(v); setIsViewMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-bold` : 'text-slate-600'}`}>
+                  {['month', 'week'].map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => { setView(v); setIsViewMenuOpen(false); }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:${theme.light} ${view === v ? `${theme.text} font-bold` : 'text-slate-600'}`}
+                    >
                       {t.views[v]}
                     </button>
                   ))}
@@ -753,7 +736,10 @@ function CalendarAppContent() {
             )}
           </div>
 
-          <button onClick={() => openAddModal(selectedDateKey)} className={`hidden sm:flex items-center gap-1 bg-slate-900 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition active:scale-95`}>
+          <button
+            onClick={() => openAddModal(selectedDateKey)}
+            className={`hidden sm:flex items-center gap-1 bg-slate-900 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition active:scale-95`}
+          >
             <Plus size={16} /> {t.addTask}
           </button>
           
@@ -762,10 +748,17 @@ function CalendarAppContent() {
               <div className={`w-8 h-8 ${theme.light} rounded-full flex items-center justify-center ${theme.text} font-bold border ${theme.border} text-xs shadow-inner`}>
                 {user.email ? user.email[0].toUpperCase() : 'U'}
               </div>
-              <button onClick={() => auth.signOut()} className="text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button>
+              <button onClick={() => signOut(auth)} className="text-slate-400 hover:text-red-500 transition-colors">
+                <LogOut size={18} />
+              </button>
             </div>
           ) : (
-            <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); }} className={`text-sm font-bold ${theme.text} hover:opacity-80 ml-2 whitespace-nowrap`}>{t.login}</button>
+            <button
+              onClick={() => { setShowAuthModal(true); setAuthMode('login'); }}
+              className={`text-sm font-bold ${theme.text} hover:opacity-80 ml-2 whitespace-nowrap`}
+            >
+              {t.login}
+            </button>
           )}
         </div>
       </header>
@@ -787,9 +780,11 @@ function CalendarAppContent() {
             {/* Calendar Headings (Sticky) */}
             {view === 'month' && (
               <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50 sticky top-0 z-20 rounded-t-xl">
-                  {t.weekDays.map((day: string) => (
-                    <div key={day} className="py-2.5 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">{day}</div>
-                  ))}
+                {t.weekDays.map((day) => (
+                  <div key={day} className="py-2.5 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    {day}
+                  </div>
+                ))}
               </div>
             )}
 
@@ -798,28 +793,36 @@ function CalendarAppContent() {
               {view === 'month' ? (
                 <div className="grid grid-cols-7 border-l border-slate-200 min-h-full auto-rows-fr">
                   {monthCells.map((cell) => {
-                    // Render Notes Block
                     if (cell.type === 'note') {
                       const monthKey = formatDateKey(new Date(year, month, 1));
                       return (
-                        <div key={cell.key} style={{ gridColumn: `span ${cell.colSpan}` }} className="border-b border-r border-slate-200 min-h-[140px] relative">
+                        <div
+                          key={cell.key}
+                          style={{ gridColumn: `span ${cell.colSpan}` }}
+                          className="border-b border-r border-slate-200 min-h-[140px] relative"
+                        >
                           <NoteBlock 
                             type="month-large"
                             title={t.monthlyNotes} 
                             theme={theme} 
                             placeholder={t.notesPlaceholder}
                             value={notes[monthKey]}
-                            onChange={(val: string) => setNotes(prev => ({ ...prev, [monthKey]: val }))}
+                            onChange={(val) => setNotes((prev) => ({ ...prev, [monthKey]: val }))}
                           />
                         </div>
                       );
                     }
                     
-                    // Render Empty Block
-                    if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/30 border-b border-r border-slate-200 min-h-[140px]" />;
+                    if (cell.type === 'empty') {
+                      return (
+                        <div
+                          key={cell.key}
+                          className="bg-stone-50/30 border-b border-r border-slate-200 min-h-[140px]"
+                        />
+                      );
+                    }
 
-                    // Render Day Block
-                    const c = cell as any;
+                    const c = cell;
                     const dayTasks = tasksMap[c.dateKey] || [];
                     const isToday = isSameDate(c.dateObj, new Date());
                     const isDragTarget = dragOverDate === c.dateKey;
@@ -837,31 +840,42 @@ function CalendarAppContent() {
                           ${isSelected && !isDragTarget ? `${theme.light}` : 'hover:bg-slate-50'}
                         `}
                       >
-                         <div className="flex justify-between items-start mb-1.5">
-                            <span className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold transition-all ${isToday ? `${theme.color} text-white shadow-md scale-110` : 'text-slate-600 group-hover:bg-white group-hover:shadow-sm'}`}>
-                              {c.day}
-                            </span>
-                            <button onClick={(e) => { e.stopPropagation(); openAddModal(c.dateKey); }} className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text} transition-opacity p-1`}><Plus size={16} /></button>
-                         </div>
-                         <div className="space-y-1 flex-1">
-                            {dayTasks.map((task) => (
-                              <TaskItem 
-                                key={task.id} 
-                                task={task} 
-                                theme={theme} 
-                                isCompact={true}
-                                dayLabel={task.dayLabel} 
-                                onClick={(t, isToggle) => {
-                                   if (isToggle) {
-                                     handleToggleTask(t);
-                                   } else {
-                                     openEditModal(t);
-                                   }
-                                }}
-                                onDragStart={handleDragStart}
-                              />
-                            ))}
-                         </div>
+                        <div className="flex justify-between items-start mb-1.5">
+                          <span
+                            className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold transition-all ${
+                              isToday
+                                ? `${theme.color} text-white shadow-md scale-110`
+                                : 'text-slate-600 group-hover:bg-white group-hover:shadow-sm'
+                            }`}
+                          >
+                            {c.day}
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openAddModal(c.dateKey); }}
+                            className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:${theme.text} transition-opacity p-1`}
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                        <div className="space-y-1 flex-1">
+                          {dayTasks.map((task) => (
+                            <TaskItem 
+                              key={task.id} 
+                              task={task} 
+                              theme={theme} 
+                              isCompact={true}
+                              dayLabel={task.dayLabel} 
+                              onClick={(t, isToggle) => {
+                                if (isToggle) {
+                                  handleToggleTask(t);
+                                } else {
+                                  openEditModal(t);
+                                }
+                              }}
+                              onDragStart={handleDragStart}
+                            />
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
@@ -881,40 +895,49 @@ function CalendarAppContent() {
                         onDrop={(e) => handleDrop(e, dateKey)}
                         className={`border-r border-b border-slate-200 p-4 flex flex-col min-h-[300px] transition-colors ${isDragTarget ? 'bg-indigo-50' : ''} ${isToday ? theme.light : ''}`}
                       >
-                         <div className="flex justify-between mb-4 pb-2 border-b border-slate-200/50 items-end">
-                           <div>
-                             <span className="text-xs font-bold text-slate-400 mr-2 uppercase">{t.weekDays[idx]}</span>
-                             <span className={`text-xl font-bold ${isToday ? theme.text : 'text-slate-700'}`}>{date.getDate()}</span>
-                           </div>
-                           <button onClick={() => openAddModal(dateKey)} className="p-1 hover:bg-white rounded-full"><Plus size={18} className="text-slate-400 hover:text-slate-700" /></button>
-                         </div>
-                         <div className="space-y-3 flex-1">
-                           {dayTasks.map(task => (
-                             <TaskItem 
-                               key={task.id} 
-                               task={task} 
-                               theme={theme} 
-                               dayLabel={task.dayLabel}
-                               onClick={(t, isToggle) => {
-                                 if (isToggle) handleToggleTask(t);
-                                 else openEditModal(t);
-                               }}
-                               onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }}
-                               onDragStart={handleDragStart}
-                             />
-                           ))}
-                         </div>
+                        <div className="flex justify-between mb-4 pb-2 border-b border-slate-200/50 items-end">
+                          <div>
+                            <span className="text-xs font-bold text-slate-400 mr-2 uppercase">
+                              {t.weekDays[idx]}
+                            </span>
+                            <span className={`text-xl font-bold ${isToday ? theme.text : 'text-slate-700'}`}>
+                              {date.getDate()}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => openAddModal(dateKey)}
+                            className="p-1 hover:bg-white rounded-full"
+                          >
+                            <Plus size={18} className="text-slate-400 hover:text-slate-700" />
+                          </button>
+                        </div>
+                        <div className="space-y-3 flex-1">
+                          {dayTasks.map((task) => (
+                            <TaskItem 
+                              key={task.id} 
+                              task={task} 
+                              theme={theme} 
+                              dayLabel={task.dayLabel}
+                              onClick={(t, isToggle) => {
+                                if (isToggle) handleToggleTask(t);
+                                else openEditModal(t);
+                              }}
+                              onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }}
+                              onDragStart={handleDragStart}
+                            />
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
                   <div className="border-r border-b border-slate-200 p-0 flex flex-col min-h-[300px]">
-                     <NoteBlock 
-                        title={t.weeklyNotes} 
-                        theme={theme} 
-                        value={notes[formatDateKey(weekDays[0])]} 
-                        onChange={(v: string) => setNotes(prev => ({...prev, [formatDateKey(weekDays[0])]: v}))} 
-                        placeholder={t.notesPlaceholder} 
-                     />
+                    <NoteBlock 
+                      title={t.weeklyNotes} 
+                      theme={theme} 
+                      value={notes[formatDateKey(weekDays[0])]} 
+                      onChange={(v) => setNotes((prev) => ({...prev, [formatDateKey(weekDays[0])]: v}))} 
+                      placeholder={t.notesPlaceholder} 
+                    />
                   </div>
                 </div>
               )}
@@ -927,45 +950,54 @@ function CalendarAppContent() {
       {view === 'month' && (
         <div className="h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] z-30 relative">
           <div className="w-24 sm:w-56 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4 gap-2">
-             <span className="text-5xl sm:text-6xl font-bold text-slate-800 tracking-tighter">{new Date(selectedDateKey).getDate()}</span>
-             <span className="text-xs sm:text-sm uppercase text-slate-500 font-bold bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-               {new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}
-             </span>
-             <button onClick={() => setIsHelpModalOpen(true)} className="mt-4 text-slate-300 hover:text-slate-500 transition-colors"><HelpCircle size={20} /></button>
+            <span className="text-5xl sm:text-6xl font-bold text-slate-800 tracking-tighter">
+              {new Date(selectedDateKey).getDate()}
+            </span>
+            <span className="text-xs sm:text-sm uppercase text-slate-500 font-bold bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+              {new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}
+            </span>
+            <button
+              onClick={() => setIsHelpModalOpen(true)}
+              className="mt-4 text-slate-300 hover:text-slate-500 transition-colors"
+            >
+              <HelpCircle size={20} />
+            </button>
           </div>
           <div className="flex-1 p-5 sm:p-8 overflow-y-auto custom-scrollbar bg-white">
-             <div className="flex items-center justify-between mb-6">
-               <h3 className="font-bold text-slate-800 text-xl flex items-center gap-2">
-                 <span className="w-2 h-6 rounded-full bg-slate-800"></span>
-                 {selectedDateKey}
-               </h3>
-               <button onClick={() => openAddModal(selectedDateKey)} className={`text-sm font-bold text-white ${theme.color} px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-2 shadow-md shadow-indigo-100`}>
-                 <Plus size={16} /> {t.addTask}
-               </button>
-             </div>
-             <div className="space-y-3">
-                {(tasksMap[selectedDateKey] || []).map(task => (
-                   <TaskItem 
-                     key={task.id} 
-                     task={task} 
-                     theme={theme} 
-                     dayLabel={task.dayLabel}
-                     // ✅ Fix Issue #6: Handle toggle properly in bottom list
-                     onClick={(t, isToggle) => {
-                       if (isToggle) handleToggleTask(t);
-                       else openEditModal(t);
-                     }}
-                     onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }} 
-                     onDragStart={handleDragStart} 
-                   />
-                ))}
-                {(tasksMap[selectedDateKey] || []).length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-8 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
-                    <CalendarIcon size={32} className="mb-2 opacity-50" />
-                    <span className="text-sm font-medium">{t.emptyDay}</span>
-                  </div>
-                )}
-             </div>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-slate-800 text-xl flex items-center gap-2">
+                <span className="w-2 h-6 rounded-full bg-slate-800"></span>
+                {selectedDateKey}
+              </h3>
+              <button
+                onClick={() => openAddModal(selectedDateKey)}
+                className={`text-sm font-bold text-white ${theme.color} px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-2 shadow-md shadow-indigo-100`}
+              >
+                <Plus size={16} /> {t.addTask}
+              </button>
+            </div>
+            <div className="space-y-3">
+              {(tasksMap[selectedDateKey] || []).map((task) => (
+                <TaskItem 
+                  key={task.id} 
+                  task={task} 
+                  theme={theme} 
+                  dayLabel={task.dayLabel}
+                  onClick={(t, isToggle) => {
+                    if (isToggle) handleToggleTask(t);
+                    else openEditModal(t);
+                  }}
+                  onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }} 
+                  onDragStart={handleDragStart} 
+                />
+              ))}
+              {(tasksMap[selectedDateKey] || []).length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                  <CalendarIcon size={32} className="mb-2 opacity-50" />
+                  <span className="text-sm font-medium">{t.emptyDay}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -973,38 +1005,76 @@ function CalendarAppContent() {
       {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-slate-900/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-white/20">
-              <h2 className="text-2xl font-bold mb-2 text-slate-800">{authMode === 'login' ? t.login : t.signup}</h2>
-              <p className="text-slate-500 text-sm mb-6">{authMode === 'login' ? t.loginDesc : t.signupDesc}</p>
-              
-              {authMessage && <div className="text-emerald-700 bg-emerald-50 border border-emerald-100 p-3 rounded-lg mb-4 text-sm font-medium">{authMessage}</div>}
-              
-              <form onSubmit={async (e) => {
-                 e.preventDefault(); 
-                 setAuthLoading(true); 
-                 setAuthMessage('');
-                 try {
-                   if (authMode === 'signup') { 
-                     await auth.createUserWithEmailAndPassword(authEmail, authPassword); 
-                     setAuthMessage(t.checkEmail); 
-                   } else { 
-                     await auth.signInWithEmailAndPassword(authEmail, authPassword); 
-                   }
-                 } catch (err: any) { 
-                   alert(err.message); 
-                 } finally { 
-                   setAuthLoading(false); 
-                 }
-              }} className="space-y-4">
-                 <input type="email" placeholder={t.email} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} required />
-                 <input type="password" placeholder={t.password} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required />
-                 <button disabled={authLoading} className={`w-full py-3 ${theme.color} text-white rounded-xl font-bold hover:brightness-110 transition shadow-lg shadow-indigo-100 disabled:opacity-50`}>
-                   {authLoading ? <Loader2 className="animate-spin mx-auto" /> : (authMode === 'login' ? t.login : t.signup)}
-                 </button>
-              </form>
-              <button onClick={() => setAuthMode(m => m === 'login' ? 'signup' : 'login')} className="mt-6 text-sm text-slate-500 hover:text-slate-800 font-medium underline decoration-slate-300 underline-offset-4">{authMode === 'login' ? t.switchToSignup : t.switchToLogin}</button>
-              <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600 transition-colors"><X size={20} /></button>
-           </div>
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-white/20">
+            <h2 className="text-2xl font-bold mb-2 text-slate-800">
+              {authMode === 'login' ? t.login : t.signup}
+            </h2>
+            <p className="text-slate-500 text-sm mb-6">
+              {authMode === 'login' ? t.loginDesc : t.signupDesc}
+            </p>
+            
+            {authMessage && (
+              <div className="text-emerald-700 bg-emerald-50 border border-emerald-100 p-3 rounded-lg mb-4 text-sm font-medium">
+                {authMessage}
+              </div>
+            )}
+            
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault(); 
+                setAuthLoading(true); 
+                setAuthMessage('');
+                try {
+                  if (authMode === 'signup') { 
+                    await createUserWithEmailAndPassword(auth, authEmail, authPassword); 
+                    setAuthMessage(t.checkEmail); 
+                  } else { 
+                    await signInWithEmailAndPassword(auth, authEmail, authPassword); 
+                  }
+                } catch (err) { 
+                  alert(err.message); 
+                } finally { 
+                  setAuthLoading(false); 
+                }
+              }}
+              className="space-y-4"
+            >
+              <input
+                type="email"
+                placeholder={t.email}
+                className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+                value={authEmail}
+                onChange={e=>setAuthEmail(e.target.value)}
+                required
+              />
+              <input
+                type="password"
+                placeholder={t.password}
+                className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all"
+                value={authPassword}
+                onChange={e=>setAuthPassword(e.target.value)}
+                required
+              />
+              <button
+                disabled={authLoading}
+                className={`w-full py-3 ${theme.color} text-white rounded-xl font-bold hover:brightness-110 transition shadow-lg shadow-indigo-100 disabled:opacity-50`}
+              >
+                {authLoading ? <Loader2 className="animate-spin mx-auto" /> : (authMode === 'login' ? t.login : t.signup)}
+              </button>
+            </form>
+            <button
+              onClick={() => setAuthMode(m => m === 'login' ? 'signup' : 'login')}
+              className="mt-6 text-sm text-slate-500 hover:text-slate-800 font-medium underline decoration-slate-300 underline-offset-4"
+            >
+              {authMode === 'login' ? t.switchToSignup : t.switchToLogin}
+            </button>
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-slate-300 hover:text-slate-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -1012,102 +1082,152 @@ function CalendarAppContent() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/30 z-[60] flex items-center justify-center p-4 backdrop-blur-md">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ring-1 ring-black/5">
-             <div className="p-4 bg-stone-50 border-b flex justify-between items-center">
-               <h3 className="font-bold text-slate-700">{t.taskDetails}</h3>
-               <button onClick={() => setIsModalOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
-             </div>
-             <div className="p-6 space-y-5">
-               <div>
-                 <input 
-                   autoFocus 
-                   className="w-full text-xl font-bold border-none p-0 focus:ring-0 placeholder:font-normal placeholder:text-slate-300 text-slate-800 bg-transparent" 
-                   placeholder={t.titlePlaceholder} 
-                   value={formText} 
-                   onChange={e => setFormText(e.target.value)}
-                   onKeyDown={(e) => {
-                     if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSaveTask();
-                   }}
-                 />
-               </div>
-               
-               <div className="flex gap-4">
-                 <div className="flex-1">
-                    <label className="text-[10px] text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">{t.startDate}</label>
-                    <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg text-sm text-slate-600 border border-slate-200 focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300 transition-all">
-                      <CalendarIcon size={16} className="text-slate-400" />
-                      <input type="date" className="bg-transparent border-none p-0 text-sm w-full focus:ring-0" value={formDate} onChange={e=>setFormDate(e.target.value)} />
-                    </div>
-                 </div>
-                 <div className="flex-1">
-                    <label className="text-[10px] text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">{t.endDate}</label>
-                    <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg text-sm text-slate-600 border border-slate-200 focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300 transition-all">
-                      <CalendarIcon size={16} className="text-slate-400" />
-                      <input type="date" className="bg-transparent border-none p-0 text-sm w-full focus:ring-0" value={formEndDate} onChange={e=>setFormEndDate(e.target.value)} />
-                    </div>
-                 </div>
-               </div>
-               
-               <div>
-                 <label className="text-[10px] text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Description</label>
-                 <textarea 
+            <div className="p-4 bg-stone-50 border-b flex justify-between items-center">
+              <h3 className="font-bold text-slate-700">{t.taskDetails}</h3>
+              <button onClick={() => setIsModalOpen(false)}>
+                <X size={20} className="text-slate-400 hover:text-slate-600" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <input 
+                  autoFocus 
+                  className="w-full text-xl font-bold border-none p-0 focus:ring-0 placeholder:font-normal placeholder:text-slate-300 text-slate-800 bg-transparent" 
+                  placeholder={t.titlePlaceholder} 
+                  value={formText} 
+                  onChange={e => setFormText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSaveTask();
+                  }}
+                />
+              </div>
+              
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="text-[10px] text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">
+                    {t.startDate}
+                  </label>
+                  <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg text-sm text-slate-600 border border-slate-200 focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300 transition-all">
+                    <CalendarIcon size={16} className="text-slate-400" />
+                    <input
+                      type="date"
+                      className="bg-transparent border-none p-0 text-sm w-full focus:ring-0"
+                      value={formDate}
+                      onChange={e=>setFormDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">
+                    {t.endDate}
+                  </label>
+                  <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg text-sm text-slate-600 border border-slate-200 focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300 transition-all">
+                    <CalendarIcon size={16} className="text-slate-400" />
+                    <input
+                      type="date"
+                      className="bg-transparent border-none p-0 text-sm w-full focus:ring-0"
+                      value={formEndDate}
+                      onChange={e=>setFormEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">
+                  Description
+                </label>
+                <textarea 
                   className="w-full bg-slate-50 p-4 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-1 focus:ring-slate-300 resize-none text-sm h-32 transition-all" 
                   placeholder={t.detailsPlaceholder} 
                   value={formDetails} 
                   onChange={e=>setFormDetails(e.target.value)} 
-                 />
-               </div>
+                />
+              </div>
 
-               <div className="flex justify-between items-center pt-2">
-                 {modalMode === 'edit' ? (
-                   <button onClick={() => { setIsModalOpen(false); setDeleteConfirm({ show: true, taskId: editingTask!.id }); }} className="text-red-400 text-sm font-medium hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
-                     <Trash2 size={16} /> {t.delete}
-                   </button>
-                 ) : <div></div>}
-                 
-                 <div className="flex gap-3">
-                    <button onClick={() => setIsModalOpen(false)} className="px-5 py-2 text-slate-500 text-sm font-bold hover:bg-slate-100 rounded-lg transition-colors">{t.cancel}</button>
-                    <button onClick={handleSaveTask} className={`px-6 py-2 ${theme.color} text-white rounded-lg text-sm font-bold shadow-md hover:brightness-110 transition-all transform active:scale-95`}>{t.save}</button>
-                 </div>
-               </div>
-             </div>
+              <div className="flex justify-between items-center pt-2">
+                {modalMode === 'edit' ? (
+                  <button
+                    onClick={() => { setIsModalOpen(false); setDeleteConfirm({ show: true, taskId: editingTask.id }); }}
+                    className="text-red-400 text-sm font-medium hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 size={16} /> {t.delete}
+                  </button>
+                ) : <div></div>}
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-5 py-2 text-slate-500 text-sm font-bold hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button
+                    onClick={handleSaveTask}
+                    className={`px-6 py-2 ${theme.color} text-white rounded-lg text-sm font-bold shadow-md hover:brightness-110 transition-all transform active:scale-95`}
+                  >
+                    {t.save}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* Delete Confirmation */}
       {deleteConfirm.show && (
-         <div className="fixed inset-0 bg-slate-900/30 z-[70] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 text-center max-w-sm w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-               <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-                 <AlertTriangle size={24} className="text-red-500" />
-               </div>
-               <h3 className="font-bold text-lg mb-2 text-slate-800">{t.confirmDeleteTitle}</h3>
-               <p className="text-slate-500 text-sm mb-6 leading-relaxed">{t.confirmDeleteDesc}</p>
-               <div className="flex gap-3">
-                 <button onClick={() => setDeleteConfirm({show:false, taskId:null})} className="flex-1 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors">{t.cancel}</button>
-                 <button onClick={handleDeleteTask} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-100 hover:bg-red-600 transition-colors">{t.confirmButton}</button>
-               </div>
+        <div className="fixed inset-0 bg-slate-900/30 z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 text-center max-w-sm w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={24} className="text-red-500" />
             </div>
-         </div>
+            <h3 className="font-bold text-lg mb-2 text-slate-800">{t.confirmDeleteTitle}</h3>
+            <p className="text-slate-500 text-sm mb-6 leading-relaxed">{t.confirmDeleteDesc}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm({show:false, taskId:null})}
+                className="flex-1 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                {t.cancel}
+              </button>
+              <button
+                onClick={handleDeleteTask}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-100 hover:bg-red-600 transition-colors"
+              >
+                {t.confirmButton}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Help Modal */}
       {isHelpModalOpen && (
         <div className="fixed inset-0 bg-slate-900/30 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-              <div className="p-4 border-b bg-stone-50 flex justify-between"><h3 className="font-bold flex items-center gap-2 text-slate-700"><HelpCircle size={18} /> {t.usageGuide}</h3><button onClick={()=>setIsHelpModalOpen(false)}><X size={18} className="text-slate-400 hover:text-slate-600" /></button></div>
-              <div className="p-6 space-y-5">
-                 {t.guideSteps.map((s: any, i: number) => (
-                   <div key={i} className="flex gap-4">
-                     <div className={`w-8 h-8 rounded-full ${theme.color} text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-sm mt-0.5`}>{i+1}</div>
-                     <div>
-                       <div className="font-bold text-sm text-slate-800 mb-0.5">{s.title}</div>
-                       <div className="text-xs text-slate-500 leading-relaxed">{s.desc}</div>
-                     </div>
-                   </div>
-                 ))}
-              </div>
-           </div>
+          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b bg-stone-50 flex justify-between">
+              <h3 className="font-bold flex items-center gap-2 text-slate-700">
+                <HelpCircle size={18} /> {t.usageGuide}
+              </h3>
+              <button onClick={()=>setIsHelpModalOpen(false)}>
+                <X size={18} className="text-slate-400 hover:text-slate-600" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              {t.guideSteps.map((s, i) => (
+                <div key={i} className="flex gap-4">
+                  <div className={`w-8 h-8 rounded-full ${theme.color} text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-sm mt-0.5`}>
+                    {i+1}
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm text-slate-800 mb-0.5">{s.title}</div>
+                    <div className="text-xs text-slate-500 leading-relaxed">{s.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
