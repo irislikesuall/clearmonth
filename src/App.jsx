@@ -46,7 +46,7 @@ const firebaseConfig = {
   apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
-  storageBucket: "clearmonth-fdd18.appspot.com",
+  storageBucket: "clearmonth-fdd18.firebasestorage.app",
   messagingSenderId: "586292348802",
   appId: "1:586292348802:web:1d7bf1db3ed7aaedadb19b"
 };
@@ -450,22 +450,26 @@ function CalendarAppContent() {
 
   // --- Actions ---
 
-  const handleToggleTask = async (task) => {
-    const newStatus = !task.completed;
-    
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: newStatus } : t));
+const handleToggleTask = async (task) => {
+  const newStatus = !task.completed;
+  
+  // 1. 乐观更新
+  setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: newStatus } : t));
 
-    if (user) {
-      try {
-        const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', task.id);
-        await updateDoc(ref, { completed: newStatus });
-      } catch (error) {
-        console.error("Failed to update task status:", error);
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: !newStatus } : t));
-        alert(lang === 'zh' ? '更新失败，请检查网络' : 'Update failed, check connection');
-      }
+  // 2. 云端更新
+  if (user) {
+    try {
+      const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', task.id);
+      await updateDoc(ref, { completed: newStatus });
+    } catch (error) {
+      console.error('toggle updateDoc error:', error);
+      // 回滚
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: !newStatus } : t));
+      alert((lang === 'zh' ? '更新失败，请检查网络：' : 'Update failed: ') + (error.code || ''));
     }
-  };
+  }
+};
+
 
   const handleSaveTask = async () => {
     if (!formText.trim()) return;
@@ -557,32 +561,40 @@ function CalendarAppContent() {
   };
 
   const handleDrop = async (e, targetDateKey) => {
-    e.preventDefault();
-    setDragOverDate(null);
+  e.preventDefault();
+  setDragOverDate(null);
+  
+  if (draggedTask && targetDateKey && draggedTask.date !== targetDateKey) {
+    const oldStart = new Date(draggedTask.date);
+    const newStart = new Date(targetDateKey);
+    const diffTime = newStart.getTime() - oldStart.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     
-    if (draggedTask && targetDateKey && draggedTask.date !== targetDateKey) {
-      const oldStart = new Date(draggedTask.date);
-      const newStart = new Date(targetDateKey);
-      const diffTime = newStart.getTime() - oldStart.getTime();
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-      
-      const oldEnd = draggedTask.endDate ? new Date(draggedTask.endDate) : oldStart;
-      const newEnd = new Date(oldEnd);
-      newEnd.setDate(newEnd.getDate() + diffDays);
-      const newEndDateKey = formatDateKey(newEnd);
+    const oldEnd = draggedTask.endDate ? new Date(draggedTask.endDate) : oldStart;
+    const newEnd = new Date(oldEnd);
+    newEnd.setDate(newEnd.getDate() + diffDays);
+    const newEndDateKey = formatDateKey(newEnd);
 
-      const updatedTask = { ...draggedTask, date: targetDateKey, endDate: newEndDateKey };
-      
-      setTasks(prev => prev.map(t => t.id === draggedTask.id ? updatedTask : t));
-      
-      if (user) {
+    const updatedTask = { ...draggedTask, date: targetDateKey, endDate: newEndDateKey };
+    
+    // 乐观更新
+    setTasks(prev => prev.map(t => t.id === draggedTask.id ? updatedTask : t));
+    
+    // 云端更新
+    if (user) {
+      try {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', draggedTask.id);
         await updateDoc(ref, { date: targetDateKey, endDate: newEndDateKey });
+      } catch (error) {
+        console.error('drag-drop updateDoc error:', error);
+        alert((lang === 'zh' ? '更新失败，请检查网络：' : 'Update failed: ') + (error.code || ''));
+        // 回滚
+        setTasks(prev => prev.map(t => t.id === draggedTask.id ? draggedTask : t));
       }
     }
-    setDraggedTask(null);
-  };
-
+  }
+  setDraggedTask(null);
+};
   // --- UI Helpers ---
 
   const openAddModal = (dateKey) => {
