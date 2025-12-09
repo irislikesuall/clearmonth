@@ -48,7 +48,6 @@ import {
 // ✅ Firebase 配置
 // ==========================================
 const firebaseConfig = {
-  // 修正：移除 "as any" 语法，使用标准的 JS 写法
   apiKey: (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) || "AIzaSyDZ2wqdY1uXj12mCXh58zbFuRh1TylPj88",
   authDomain: "clearmonth-fdd18.firebaseapp.com",
   projectId: "clearmonth-fdd18",
@@ -280,9 +279,18 @@ const NoteBlock = ({ title, value, onChange, theme, placeholder, type = 'week' }
 function CalendarAppContent() {
   const [lang, setLang] = useState('zh'); 
   const t = TRANSLATIONS[lang];
-  const [currentThemeId, setCurrentThemeId] = useState('orange');
+  
+  // 1. 主题持久化：从 localStorage 初始化，默认 orange
+  const [currentThemeId, setCurrentThemeId] = useState(() => {
+    return localStorage.getItem('saas_theme_v3') || 'orange';
+  });
   const theme = THEMES.find(th => th.id === currentThemeId) || THEMES[0];
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+
+  // 监听主题变化并保存
+  useEffect(() => {
+    localStorage.setItem('saas_theme_v3', currentThemeId);
+  }, [currentThemeId]);
 
   // 日历状态
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -291,9 +299,11 @@ function CalendarAppContent() {
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   
   // 数据状态
-  const [tasks, setTasks] = useState([{ id: 'demo-1', date: formatDateKey(new Date()), endDate: formatDateKey(new Date()), text: '欢迎使用清月历', details: '登录后数据自动云同步', completed: false }]);
+  // 核心修复：初始为空数组，等待加载，防止覆盖
+  const [tasks, setTasks] = useState([]); 
   const [notes, setNotes] = useState({}); 
-  const [dataLoading, setDataLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [isDataLoaded, setIsDataLoaded] = useState(false); // 数据加载完成标志位
   
   // 用户状态
   const [user, setUser] = useState(null);
@@ -311,7 +321,7 @@ function CalendarAppContent() {
   const [formText, setFormText] = useState('');
   const [formDetails, setFormDetails] = useState('');
   const [formDate, setFormDate] = useState('');
-  const [formEndDate, setFormEndDate] = useState(''); // 新增结束时间
+  const [formEndDate, setFormEndDate] = useState(''); 
   const [deleteConfirm, setDeleteConfirm] = useState({ show: false, taskId: null });
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
 
@@ -319,14 +329,13 @@ function CalendarAppContent() {
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
 
-  // 性能优化 & 跨天逻辑处理：任务映射表 O(N)
+  // 任务映射表
   const tasksMap = useMemo(() => {
     const map = {};
     tasks.forEach(task => {
       const startDate = new Date(task.date);
       const endDate = task.endDate ? new Date(task.endDate) : startDate;
       
-      // 遍历任务涉及的每一天
       let current = new Date(startDate);
       let dayIndex = 1;
       const totalDays = getDayDiff(startDate, endDate) + 1;
@@ -357,36 +366,56 @@ function CalendarAppContent() {
     return () => unsubscribe();
   }, []);
 
-  // 数据同步
+  // 数据同步逻辑 (核心修复)
   useEffect(() => {
+    setDataLoading(true);
+
     if (!user) {
+      // 游客模式：从 LocalStorage 读取
       const localTasks = localStorage.getItem('saas_tasks_v3');
       const localNotes = localStorage.getItem('saas_notes_v3');
-      if (localTasks) try { setTasks(JSON.parse(localTasks)); } catch {}
-      if (localNotes) try { setNotes(JSON.parse(localNotes)); } catch {}
+      
+      if (localTasks) {
+        try { setTasks(JSON.parse(localTasks)); } catch {}
+      } else {
+        // 只有在本地完全没有数据时，才写入演示数据
+        setTasks([{ id: 'demo-1', date: formatDateKey(new Date()), endDate: formatDateKey(new Date()), text: '欢迎使用清月历', details: '数据保存在本地，登录后可云同步。', completed: false }]);
+      }
+
+      if (localNotes) {
+        try { setNotes(JSON.parse(localNotes)); } catch {}
+      }
+      
+      setDataLoading(false);
+      setIsDataLoaded(true); // 标记加载完成，允许后续写入
       return;
     }
 
-    setDataLoading(true);
+    // 用户模式：从 Firestore 读取
     const q = query(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks'));
     const unsub = onSnapshot(q, (snap) => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setDataLoading(false);
+      setIsDataLoaded(true); // 标记加载完成
     });
+    
     const savedNotes = localStorage.getItem(`saas_notes_${user.uid}`);
     if (savedNotes) try { setNotes(JSON.parse(savedNotes)); } catch {}
 
     return () => unsub();
   }, [user]);
 
+  // 数据保存逻辑 (仅在 isDataLoaded 为 true 时执行)
   useEffect(() => {
+    if (!isDataLoaded) return; // 如果还没加载完，严禁写入，防止覆盖
+
     if (!user) {
       localStorage.setItem('saas_tasks_v3', JSON.stringify(tasks));
       localStorage.setItem('saas_notes_v3', JSON.stringify(notes));
     } else {
       localStorage.setItem(`saas_notes_${user.uid}`, JSON.stringify(notes));
     }
-  }, [tasks, notes, user]);
+  }, [tasks, notes, user, isDataLoaded]);
 
   // --- 操作逻辑 ---
 
@@ -406,7 +435,6 @@ function CalendarAppContent() {
   const handleDragOver = (e, dateKey) => {
     e.preventDefault(); 
     e.dataTransfer.dropEffect = 'move';
-    // 只有当拖拽到不同于开始日期时才高亮
     if (draggedTask && dateKey && draggedTask.date !== dateKey) {
       setDragOverDate(dateKey);
     }
@@ -417,7 +445,6 @@ function CalendarAppContent() {
     setDragOverDate(null);
     
     if (draggedTask && targetDateKey && draggedTask.date !== targetDateKey) {
-      // 计算日期差，整体移动
       const oldStart = new Date(draggedTask.date);
       const newStart = new Date(targetDateKey);
       const diffTime = newStart - oldStart;
@@ -430,12 +457,11 @@ function CalendarAppContent() {
 
       const updatedTask = { ...draggedTask, date: targetDateKey, endDate: newEndDateKey };
       
-      // 乐观更新
       setTasks(prev => prev.map(t => t.id === draggedTask.id ? updatedTask : t));
       
-      // 数据库更新
       if (user) {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', draggedTask.id);
+        // 修复：补全 endDate，确保跨天任务同步正确
         await updateDoc(ref, { date: targetDateKey, endDate: newEndDateKey });
       }
     }
@@ -462,7 +488,6 @@ function CalendarAppContent() {
   const saveTask = async () => {
     if (!formText.trim()) return;
     
-    // 默认结束日期为开始日期
     const finalEndDate = formEndDate || formDate;
 
     if (modalMode === 'add') {
@@ -493,6 +518,7 @@ function CalendarAppContent() {
       setIsModalOpen(false);
       if (user) {
         const ref = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', updated.id);
+        // 修复：补全 endDate
         await updateDoc(ref, { text: updated.text, details: updated.details, date: updated.date, endDate: updated.endDate });
       }
     }
@@ -532,35 +558,26 @@ function CalendarAppContent() {
   const daysInMonth = getDaysInMonth(year, month);
   const firstDayObj = getFirstDayOfMonth(year, month); // 0-6
   
-  // 智能计算备忘录位置
-  // 1. 月初空格数
   const startEmptyCount = firstDayObj;
-  // 2. 月末空格数 (补齐到本周结束)
   const totalDaysSoFar = startEmptyCount + daysInMonth;
   const endEmptyCount = (7 - (totalDaysSoFar % 7)) % 7;
   
-  // 决定备忘录放在哪里：哪边空位多放哪边。且必须 > 0
   const useStartForNotes = startEmptyCount > 0 && startEmptyCount >= endEmptyCount;
   const useEndForNotes = !useStartForNotes && endEmptyCount > 0;
   
   const monthCells = [];
   
-  // A. 月初
   if (useStartForNotes) {
-    // 渲染一个大格子
     monthCells.push({ type: 'note', colSpan: startEmptyCount, key: 'note-start' });
   } else {
-    // 渲染普通空格子
     for (let i = 0; i < startEmptyCount; i++) monthCells.push({ type: 'empty', key: `empty-start-${i}` });
   }
   
-  // B. 日期
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(year, month, day);
     monthCells.push({ type: 'day', day, dateKey: formatDateKey(d), dateObj: d });
   }
   
-  // C. 月末
   if (useEndForNotes) {
     monthCells.push({ type: 'note', colSpan: endEmptyCount, key: 'note-end' });
   } else {
@@ -572,14 +589,14 @@ function CalendarAppContent() {
   return (
     <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800">
       
-      {/* Header - Z-Index 提升到 50 */}
+      {/* Header - Z-Index 50 */}
       <header className={`flex-shrink-0 bg-white border-b ${theme.border} px-3 sm:px-6 py-3 flex items-center justify-between shadow-sm z-50 relative`}>
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
           <div className="flex items-center gap-2 cursor-pointer group flex-shrink-0" onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}>
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg ${theme.color}`}>
               {lang === 'zh' ? <span className="font-serif font-bold text-sm">月</span> : <CalendarIcon size={18} />}
             </div>
-            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName} <span className="text-xs font-normal opacity-50 ml-1">v3.0</span></span>
+            <span className="font-bold text-xl tracking-tight hidden sm:block">{t.appName} <span className="text-xs font-normal opacity-50 ml-1">v3.1</span></span>
           </div>
           <div className="flex items-center gap-1 bg-stone-100 rounded-full px-1.5 py-1 flex-shrink-0">
              <button onClick={() => { const now = new Date(); setCurrentDate(now); setSelectedDateKey(formatDateKey(now)); }} className={`text-xs font-bold ${theme.text} hover:bg-white px-3 py-1.5 rounded-full transition shadow-sm mr-1`}>{t.today}</button>
@@ -632,17 +649,14 @@ function CalendarAppContent() {
         </div>
       </header>
 
-      {/* Main Grid - 固定最小宽度，允许横向滚动 */}
+      {/* Main Grid */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {dataLoading && <div className="absolute inset-0 bg-white/50 z-40 flex items-center justify-center"><Loader2 className={`animate-spin ${theme.text}`} size={32} /></div>}
         
-        {/* 外层滚动容器，处理所有滚动 (Single Scroll Container) */}
         <div className="flex-1 overflow-auto bg-stone-50 p-2 sm:p-4">
-          
-          {/* 日历卡片 - 移除 overflow-hidden，让它自然撑高 */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-w-[1000px]">
             
-            {/* Calendar Headings - 设为 Sticky 吸顶 (Z-Index 20, 低于 Header) */}
+            {/* Calendar Headings (Sticky) */}
             {view === 'month' && (
               <div className="grid grid-cols-7 border-b border-slate-200 bg-stone-50 sticky top-0 z-20">
                   {t.weekDays.map(day => <div key={day} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase">{day}</div>)}
@@ -652,10 +666,8 @@ function CalendarAppContent() {
             {/* Grid Content */}
             <div className="bg-white">
               {view === 'month' ? (
-                // 移除 auto-rows-fr，改为默认 auto，允许行高自适应
                 <div className="grid grid-cols-7 border-l border-slate-200">
                   {monthCells.map((cell, idx) => {
-                    // A. 月度备忘录 (跨列)
                     if (cell.type === 'note') {
                       const monthKey = formatDateKey(new Date(year, month, 1));
                       return (
@@ -672,10 +684,8 @@ function CalendarAppContent() {
                       );
                     }
 
-                    // B. 空格子
                     if (cell.type === 'empty') return <div key={cell.key} className="bg-stone-50/50 border-b border-r border-slate-200 min-h-[120px]" />;
 
-                    // C. 日期格子
                     const dayTasks = tasksMap[cell.dateKey] || [];
                     const isToday = isSameDate(cell.dateObj, new Date());
                     const isDragTarget = dragOverDate === cell.dateKey;
@@ -709,7 +719,10 @@ function CalendarAppContent() {
                                    if (toggle) {
                                      const updated = { ...t, completed: !t.completed };
                                      setTasks(prev => prev.map(pt => pt.id === t.id ? updated : pt));
-                                     if(user) updateDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', t.id), { completed: updated.completed });
+                                     if(user) {
+                                        // 修复：补全 endDate，防止同步时丢失
+                                        updateDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks', t.id), { completed: updated.completed, endDate: t.endDate || t.date });
+                                     }
                                    } else {
                                      openEditModal(t);
                                    }
@@ -724,7 +737,6 @@ function CalendarAppContent() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-4 auto-rows-fr min-h-full">
-                  {/* Days 1-7 */}
                   {weekDays.map((date, idx) => {
                     const dateKey = formatDateKey(date);
                     const dayTasks = tasksMap[dateKey] || [];
@@ -754,7 +766,6 @@ function CalendarAppContent() {
                       </div>
                     );
                   })}
-                  {/* Slot 8: Weekly Note (in the grid flow) */}
                   <div className="border-r border-b border-slate-200 p-3 sm:p-4 flex flex-col min-h-[180px] bg-white/50">
                      <NoteBlock 
                         title={t.weeklyNotes} 
@@ -771,7 +782,7 @@ function CalendarAppContent() {
         </div>
       </main>
       
-      {/* 底部详情区 (仅月视图) - 调整为 h-64 (256px) 解决屏幕遮挡问题 */}
+      {/* 底部详情区 */}
       {view === 'month' && (
         <div className="h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20 relative">
           <div className="w-24 sm:w-48 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4">
