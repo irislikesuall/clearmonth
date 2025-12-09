@@ -423,15 +423,17 @@ function CalendarAppContent() {
 
       const tasksRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks');
       const unsub = onSnapshot(tasksRef, (snap) => {
-        const loadedTasks = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setTasks(loadedTasks);
-        
-        isUserLoadedRef.current = true;
-        setDataLoading(false);
-      }, (err) => {
-        console.error("Firestore Error:", err);
-        setDataLoading(false);
-      });
+  const loadedTasks = snap.docs.map((d) => ({
+    ...d.data(),     // 先展开数据
+    id: d.id        // 最后用真正的 docId 覆盖掉 data 里的旧 id
+  }));
+  setTasks(loadedTasks);
+  isUserLoadedRef.current = true;
+  setDataLoading(false);
+}, (err) => {
+  console.error("Firestore Error:", err);
+  setDataLoading(false);
+});
       
       return () => unsub();
     }
@@ -492,17 +494,22 @@ const handleToggleTask = async (task) => {
 
       if (user) {
         try {
-          const docRef = await addDoc(collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks'), {
-            ...newTask, 
-            createdAt: serverTimestamp()
-          });
-          setTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: docRef.id } : t));
-        } catch (e) { 
+          const { id, ...payload } = newTask;
+          const docRef = await addDoc(
+            colllection(db, 'artifacts', APP_ID, 'users', user.uid, 'task'),
+            {
+              ...payload,
+              createAt: serverTimestamp()
+            }
+            );
+          setTasks(prev => prev.map(t => t.id === temId ? { ...t, id: docRef.id}
+            } catch (e) {
           console.error(e);
-          setTasks(prev => prev.filter(t => t.id !== tempId));
-          alert("Failed to save task");
-        }
-      }
+          setTasks(prev => prev.filter(t => t.id !==tempId);
+          alert(lang === 'zh' ? ''任务保存失败，请检查网络' : 'Failed to save task');
+  }
+      }       
+            
     } else if (editingTask) {
       const updated = { ...editingTask, date: formDate, endDate: finalEndDate, text: formText, details: formDetails };
       
