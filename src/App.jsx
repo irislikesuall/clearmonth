@@ -1062,63 +1062,6 @@ const handleToggleTask = async (task) => {
           </div>
         </div>
       </main>
-      
-      {/* Bottom Details Panel */}
-      {view === 'month' && (
-        <div className="h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] z-30 relative">
-          <div className="w-24 sm:w-56 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4 gap-2">
-            <span className="text-5xl sm:text-6xl font-bold text-slate-800 tracking-tighter">
-              {new Date(selectedDateKey).getDate()}
-            </span>
-            <span className="text-xs sm:text-sm uppercase text-slate-500 font-bold bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-              {new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}
-            </span>
-            <button
-              onClick={() => setIsHelpModalOpen(true)}
-              className="mt-4 text-slate-300 hover:text-slate-500 transition-colors"
-            >
-              <HelpCircle size={20} />
-            </button>
-          </div>
-          <div className="flex-1 p-5 sm:p-8 overflow-y-auto custom-scrollbar bg-white">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-slate-800 text-xl flex items-center gap-2">
-                <span className="w-2 h-6 rounded-full bg-slate-800"></span>
-                {selectedDateKey}
-              </h3>
-              <button
-                onClick={() => openAddModal(selectedDateKey)}
-                className={`text-sm font-bold text-white ${theme.color} px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-2 shadow-md shadow-indigo-100`}
-              >
-                <Plus size={16} /> {t.addTask}
-              </button>
-            </div>
-            <div className="space-y-3">
-              {(tasksMap[selectedDateKey] || []).map((task) => (
-                <TaskItem 
-                  key={task.id} 
-                  task={task} 
-                  theme={theme} 
-                  dayLabel={task.dayLabel}
-                  onClick={(t, isToggle) => {
-                    if (isToggle) handleToggleTask(t);
-                    else openEditModal(t);
-                  }}
-                  onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }} 
-                  onDragStart={handleDragStart} 
-                />
-              ))}
-              {(tasksMap[selectedDateKey] || []).length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
-                  <CalendarIcon size={32} className="mb-2 opacity-50" />
-                  <span className="text-sm font-medium">{t.emptyDay}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-slate-900/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
