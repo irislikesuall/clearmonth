@@ -1096,7 +1096,7 @@ const handleToggleTask = async (task) => {
                             ))}
                           </div>
                         </div>
-                        {idx === 3 && (
+                        {idx === weekDays.length - 1 && (
                           <div className="border-r border-b border-slate-200 p-0 flex flex-col min-h-[300px]">
                             <NoteBlock 
                               title={t.weeklyNotes} 
