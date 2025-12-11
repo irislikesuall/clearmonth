@@ -832,7 +832,7 @@ const handleToggleTask = async (task) => {
         )}
         
         <div className="flex-1 overflow-auto bg-stone-50 p-2 sm:p-4 custom-scrollbar">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-w-[800px] h-full">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-w-[800px] min-h-full">
             
             {/* Calendar Headings (Sticky) */}
             {view === 'month' && (
@@ -864,7 +864,7 @@ const handleToggleTask = async (task) => {
                             theme={theme} 
                             placeholder={t.notesPlaceholder}
                             value={notes[monthKey]}
-                            onChange={(val) => setNotes((prev) => ({ ...prev, [monthKey]: val }))}
+                            onChange={(val) => handleNoteChange(monthKey, val)}
                           />
                         </div>
                       );
@@ -945,60 +945,120 @@ const handleToggleTask = async (task) => {
                     const dayTasks = tasksMap[dateKey] || [];
                     const isDragTarget = dragOverDate === dateKey;
                     const isToday = isSameDate(date, new Date());
+                    const weekKey = formatDateKey(weekDays[0]);
                     return (
-                      <div 
-                        key={dateKey} 
-                        onDragOver={(e) => handleDragOver(e, dateKey)}
-                        onDrop={(e) => handleDrop(e, dateKey)}
-                        className={`border-r border-b border-slate-200 p-4 flex flex-col min-h-[300px] transition-colors ${isDragTarget ? 'bg-indigo-50' : ''} ${isToday ? theme.light : ''}`}
-                      >
-                        <div className="flex justify-between mb-4 pb-2 border-b border-slate-200/50 items-end">
-                          <div>
-                            <span className="text-xs font-bold text-slate-400 mr-2 uppercase">
-                              {t.weekDays[idx]}
-                            </span>
-                            <span className={`text-xl font-bold ${isToday ? theme.text : 'text-slate-700'}`}>
-                              {date.getDate()}
-                            </span>
+                      <React.Fragment key={dateKey}>
+                        <div 
+                          onDragOver={(e) => handleDragOver(e, dateKey)}
+                          onDrop={(e) => handleDrop(e, dateKey)}
+                          className={`border-r border-b border-slate-200 p-4 flex flex-col min-h-[300px] transition-colors ${isDragTarget ? 'bg-indigo-50' : ''} ${isToday ? theme.light : ''}`}
+                        >
+                          <div className="flex justify-between mb-4 pb-2 border-b border-slate-200/50 items-end">
+                            <div>
+                              <span className="text-xs font-bold text-slate-400 mr-2 uppercase">
+                                {t.weekDays[idx]}
+                              </span>
+                              <span className={`text-xl font-bold ${isToday ? theme.text : 'text-slate-700'}`}>
+                                {date.getDate()}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => openAddModal(dateKey)}
+                              className="p-1 hover:bg-white rounded-full"
+                            >
+                              <Plus size={18} className="text-slate-400 hover:text-slate-700" />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => openAddModal(dateKey)}
-                            className="p-1 hover:bg-white rounded-full"
-                          >
-                            <Plus size={18} className="text-slate-400 hover:text-slate-700" />
-                          </button>
+                          <div className="space-y-3 flex-1">
+                            {dayTasks.map((task) => (
+                              <TaskItem 
+                                key={task.id} 
+                                task={task} 
+                                theme={theme} 
+                                dayLabel={task.dayLabel}
+                                onClick={(t, isToggle) => {
+                                  if (isToggle) handleToggleTask(t);
+                                  else openEditModal(t);
+                                }}
+                                onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }}
+                                onDragStart={handleDragStart}
+                              />
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-3 flex-1">
-                          {dayTasks.map((task) => (
-                            <TaskItem 
-                              key={task.id} 
-                              task={task} 
+                        {idx === 3 && (
+                          <div className="border-r border-b border-slate-200 p-0 flex flex-col min-h-[300px]">
+                            <NoteBlock 
+                              title={t.weeklyNotes} 
                               theme={theme} 
-                              dayLabel={task.dayLabel}
-                              onClick={(t, isToggle) => {
-                                if (isToggle) handleToggleTask(t);
-                                else openEditModal(t);
-                              }}
-                              onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }}
-                              onDragStart={handleDragStart}
+                              value={notes[weekKey]} 
+                              onChange={(v) => handleNoteChange(weekKey, v)} 
+                              placeholder={t.notesPlaceholder} 
                             />
-                          ))}
-                        </div>
-                      </div>
+                          </div>
+                        )}
+                      </React.Fragment>
                     );
                   })}
-                  <div className="border-r border-b border-slate-200 p-0 flex flex-col min-h-[300px]">
-                    <NoteBlock 
-                      title={t.weeklyNotes} 
-                      theme={theme} 
-                      value={notes[formatDateKey(weekDays[0])]} 
-                      onChange={(v) => setNotes((prev) => ({...prev, [formatDateKey(weekDays[0])]: v}))} 
-                      placeholder={t.notesPlaceholder} 
-                    />
-                  </div>
                 </div>
               )}
             </div>
+
+            {/* ✅ 底部详情 Panel —— 已经放进日历容器里了 */}
+            {view === 'month' && (
+              <div className="mt-3 h-64 bg-white border-t border-slate-200 flex shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] relative">
+                <div className="w-24 sm:w-56 bg-stone-50 border-r border-slate-200 flex flex-col items-center justify-center p-4 gap-2">
+                  <span className="text-5xl sm:text-6xl font-bold text-slate-800 tracking-tighter">
+                    {new Date(selectedDateKey).getDate()}
+                  </span>
+                  <span className="text-xs sm:text-sm uppercase text-slate-500 font-bold bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+                    {new Date(selectedDateKey).toLocaleString(lang==='zh'?'zh-CN':'en-US', {weekday:'long'})}
+                  </span>
+                  <button
+                    onClick={() => setIsHelpModalOpen(true)}
+                    className="mt-4 text-slate-300 hover:text-slate-500 transition-colors"
+                  >
+                    <HelpCircle size={20} />
+                  </button>
+                </div>
+                <div className="flex-1 p-5 sm:p-8 overflow-y-auto custom-scrollbar bg-white">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-bold text-slate-800 text-xl flex items-center gap-2">
+                      <span className="w-2 h-6 rounded-full bg-slate-800"></span>
+                      {selectedDateKey}
+                    </h3>
+                    <button
+                      onClick={() => openAddModal(selectedDateKey)}
+                      className={`text-sm font-bold text-white ${theme.color} px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-2 shadow-md shadow-indigo-100`}
+                    >
+                      <Plus size={16} /> {t.addTask}
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {(tasksMap[selectedDateKey] || []).map((task) => (
+                      <TaskItem 
+                        key={task.id} 
+                        task={task} 
+                        theme={theme} 
+                        dayLabel={task.dayLabel}
+                        onClick={(t, isToggle) => {
+                          if (isToggle) handleToggleTask(t);
+                          else openEditModal(t);
+                        }}
+                        onDelete={() => { setDeleteConfirm({ show: true, taskId: task.id }); }} 
+                        onDragStart={handleDragStart} 
+                      />
+                    ))}
+                    {(tasksMap[selectedDateKey] || []).length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-8 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                        <CalendarIcon size={32} className="mb-2 opacity-50" />
+                        <span className="text-sm font-medium">{t.emptyDay}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
