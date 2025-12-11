@@ -29,7 +29,8 @@ import {
   doc, 
   updateDoc, 
   query, 
-  serverTimestamp 
+  serverTimestamp,
+  setDoc
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -412,31 +413,104 @@ function CalendarAppContent() {
       isUserLoadedRef.current = true;
       setDataLoading(false);
 
-    } else {
+  } else {
+      // 1）先读本地 notes（可能是之前单机版留下的）
       const userNotesKey = `saas_notes_${user.uid}`;
       const savedNotes = localStorage.getItem(userNotesKey);
+      let parsedLocalNotes = {};
       if (savedNotes) {
-        try { setNotes(JSON.parse(savedNotes)); } catch { setNotes({}); }
+        try {
+          parsedLocalNotes = JSON.parse(savedNotes) || {};
+          setNotes(parsedLocalNotes);
+        } catch {
+          parsedLocalNotes = {};
+          setNotes({});
+        }
       } else {
         setNotes({});
       }
 
+      // 2）订阅 tasks
       const tasksRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'tasks');
-      const unsub = onSnapshot(tasksRef, (snap) => {
-  const loadedTasks = snap.docs.map((d) => ({
-    ...d.data(),     // 先展开数据
-    id: d.id        // 最后用真正的 docId 覆盖掉 data 里的旧 id
-  }));
-  setTasks(loadedTasks);
-  isUserLoadedRef.current = true;
-  setDataLoading(false);
-}, (err) => {
-  console.error("Firestore Error:", err);
-  setDataLoading(false);
-});
-      
-      return () => unsub();
-    }
+      const unsubTasks = onSnapshot(
+        tasksRef,
+        (snap) => {
+          const loadedTasks = snap.docs.map((d) => ({
+            ...d.data(),
+            id: d.id,          // 确保 id 是 docId
+          }));
+          setTasks(loadedTasks);
+          isUserLoadedRef.current = true;
+          setDataLoading(false);
+        },
+        (err) => {
+          console.error('Firestore Error (tasks):', err);
+          setDataLoading(false);
+        }
+      );
+
+      // 3）订阅 notes
+      const notesRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'notes');
+      const unsubNotes = onSnapshot(
+        notesRef,
+        async (snap) => {
+          if (snap.empty) {
+            // Firestore 里还没有任何 note：
+            // 如果本地有就当作“首登迁移”，写入云端
+            if (Object.keys(parsedLocalNotes).length > 0) {
+              try {
+                await Promise.all(
+                  Object.entries(parsedLocalNotes).map(([key, value]) => {
+                    const noteRef = doc(
+                      db,
+                      'artifacts',
+                      APP_ID,
+                      'users',
+                      user.uid,
+                      'notes',
+                      key
+                    );
+                    return setDoc(
+                      noteRef,
+                      {
+                        key,
+                        value,
+                        updatedAt: serverTimestamp(),
+                      },
+                      { merge: true }
+                    );
+                  })
+                );
+              } catch (e) {
+                console.error('Migrate local notes to Firestore failed:', e);
+              }
+              // 保持当前 notes = 本地版本
+              setNotes(parsedLocalNotes);
+            } else {
+              setNotes({});
+            }
+          } else {
+            // Firestore 有数据，以云端为准
+            const cloudNotes = {};
+            snap.docs.forEach((d) => {
+              const data = d.data();
+              cloudNotes[d.id] = data.value || '';
+            });
+            setNotes(cloudNotes);
+          }
+        },
+        (err) => {
+          console.error('Firestore Error (notes):', err);
+        }
+      );
+
+      // 4）清理
+      return () => {
+        unsubTasks();
+        unsubNotes();
+      };
+  }
+
   }, [user, lang]);
 
   useEffect(() => {
@@ -451,6 +525,42 @@ function CalendarAppContent() {
   }, [tasks, notes, user]);
 
   // --- Actions ---
+  // --- Notes Actions (cloud + local) ---
+
+  const handleNoteChange = async (noteKey, value) => {
+    // 1）本地先更新
+    setNotes(prev => ({
+      ...prev,
+      [noteKey]: value,
+    }));
+
+    // 2）如果已登录，同步到 Firestore
+    if (user) {
+      try {
+        const noteRef = doc(
+          db,
+          'artifacts',
+          APP_ID,
+          'users',
+          user.uid,
+          'notes',
+          noteKey
+        );
+        await setDoc(
+          noteRef,
+          {
+            key: noteKey,
+            value,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        console.error('Note save failed:', e);
+        // 这里我没回滚 notes，因为只是备注，不至于影响主逻辑
+      }
+    }
+  };
 
 const handleToggleTask = async (task) => {
   const newStatus = !task.completed;
@@ -992,7 +1102,7 @@ const handleToggleTask = async (task) => {
                               title={t.weeklyNotes} 
                               theme={theme} 
                               value={notes[weekKey]} 
-                              onChange={(v) => handleNoteChange(weekKey, v)} 
+                              onChange={(v) => handleNoteChange(formatDateKey(weekDays[0]), v)}  
                               placeholder={t.notesPlaceholder} 
                             />
                           </div>
